@@ -190,11 +190,14 @@ test("partial range reads do not unlock guarded whole-file patches", async () =>
     });
 
     const patch = [
+      "diff --git a/large.ts b/large.ts",
       "--- a/large.ts",
       "+++ b/large.ts",
-      "@@ -320 +320 @@",
+      "@@ -319,3 +319,3 @@",
+      " export const line319 = 319;",
       "-export const NEEDLE_ALPHA = true;",
       "+export const NEEDLE_ALPHA = false;",
+      " export const line321 = 321;",
       "",
     ].join("\n");
 

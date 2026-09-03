@@ -15,13 +15,16 @@ import {
   buildSessionFinishReport,
   summarizeSession,
 } from "./monitoring.js";
+import { collectToolPerformance } from "./performance.js";
 import { listAllowedCommands, runAllowedCommand } from "./runner.js";
 import { persistSessionReport } from "./session-history.js";
 import {
   finishSession,
   getSessionRecord,
+  recordSessionEvent,
   startSession,
 } from "./sessions.js";
+import type { LatencyTool } from "./types.js";
 import {
   applySessionPatch,
   getSessionRepoDiff,
@@ -29,6 +32,37 @@ import {
 } from "./write.js";
 
 const MAX_STATUS_LINES = 200;
+
+async function measuredTool<T>(
+  tool: LatencyTool,
+  getSessionId: () => string | undefined,
+  action: () => Promise<T>,
+): Promise<T> {
+  const measured = await collectToolPerformance(action);
+  const sessionId = getSessionId();
+
+  if (sessionId) {
+    const session = getSessionRecord(sessionId);
+
+    if (session?.status === "active") {
+      recordSessionEvent(sessionId, {
+        type: "latency",
+        timestamp: new Date().toISOString(),
+        tool,
+        durationMs: measured.sample.durationMs,
+        failed: measured.sample.failed,
+        scan: measured.sample.scan,
+        searchRg: measured.sample.searchRg,
+      });
+    }
+  }
+
+  if (measured.error !== undefined) {
+    throw measured.error;
+  }
+
+  return measured.value as T;
+}
 
 export function createRepoScopeServer(): McpServer {
   const server = new McpServer({
@@ -57,47 +91,48 @@ export function createRepoScopeServer(): McpServer {
       fileHints,
       budgetTokens,
       sessionId,
-    }) => {
-      const result = await buildContext({
-        targetPath,
-        task,
-        searchTerms,
-        fileHints,
-        budgetTokens,
-        sessionId,
-      });
+    }) =>
+      measuredTool("repo_context", () => sessionId, async () => {
+        const result = await buildContext({
+          targetPath,
+          task,
+          searchTerms,
+          fileHints,
+          budgetTokens,
+          sessionId,
+        });
 
-      if (result.selectedFiles.length === 0) {
+        if (result.selectedFiles.length === 0) {
+          return createTextResponse(
+            "repo_context",
+            "NO_NEW_CONTEXT",
+            sessionId,
+          );
+        }
+
         return createTextResponse(
           "repo_context",
-          "NO_NEW_CONTEXT",
+          JSON.stringify({
+            contextPacket: result.contextPacket,
+            selectedFiles: result.selectedFiles.map((file) => file.path),
+            skippedFiles: result.skippedFiles,
+            selectionSource: result.monitoringEvent.selectionSource,
+            session: result.session
+              ? {
+                  usedTokens: result.session.usedTokens,
+                  remainingTokens: result.session.remainingTokens,
+                }
+              : undefined,
+            tokens: {
+              wholeRepo: result.wholeRepoTokens,
+              selected: result.selectedTokens,
+              saved: result.savedTokens,
+              reductionPercent: result.reductionPercent,
+            },
+          }),
           sessionId,
         );
-      }
-
-      return createTextResponse(
-        "repo_context",
-        JSON.stringify({
-          contextPacket: result.contextPacket,
-          selectedFiles: result.selectedFiles.map((file) => file.path),
-          skippedFiles: result.skippedFiles,
-          selectionSource: result.monitoringEvent.selectionSource,
-          session: result.session
-            ? {
-                usedTokens: result.session.usedTokens,
-                remainingTokens: result.session.remainingTokens,
-              }
-            : undefined,
-          tokens: {
-            wholeRepo: result.wholeRepoTokens,
-            selected: result.selectedTokens,
-            saved: result.savedTokens,
-            reductionPercent: result.reductionPercent,
-          },
-        }),
-        sessionId,
-      );
-    },
+      }),
   );
 
   server.registerTool(
@@ -112,20 +147,21 @@ export function createRepoScopeServer(): McpServer {
         sessionId: z.string().optional(),
       }),
     },
-    async ({ targetPath, searchTerms, limit, sessionId }) => {
-      const result = await searchRepo({
-        targetPath,
-        searchTerms,
-        limit,
-        sessionId,
-      });
+    async ({ targetPath, searchTerms, limit, sessionId }) =>
+      measuredTool("repo_search", () => sessionId, async () => {
+        const result = await searchRepo({
+          targetPath,
+          searchTerms,
+          limit,
+          sessionId,
+        });
 
-      return createTextResponse(
-        "repo_search",
-        JSON.stringify({ results: result.results }),
-        sessionId,
-      );
-    },
+        return createTextResponse(
+          "repo_search",
+          JSON.stringify({ results: result.results }),
+          sessionId,
+        );
+      }),
   );
 
   server.registerTool(
@@ -155,39 +191,40 @@ export function createRepoScopeServer(): McpServer {
           { message: "Provide at least one file or line range" },
         ),
     },
-    async ({ targetPath, files, ranges, budgetTokens, sessionId }) => {
-      const result = await readRepo({
-        targetPath,
-        files,
-        ranges,
-        budgetTokens,
-        sessionId,
-      });
-      const parts: string[] = [];
+    async ({ targetPath, files, ranges, budgetTokens, sessionId }) =>
+      measuredTool("repo_read", () => sessionId, async () => {
+        const result = await readRepo({
+          targetPath,
+          files,
+          ranges,
+          budgetTokens,
+          sessionId,
+        });
+        const parts: string[] = [];
 
-      for (const file of result.files) {
-        const mode = file.complete ? "FULL" : `L${file.startLine}-${file.endLine}`;
-        parts.push(
-          `FILE ${file.path} ${mode} TOTAL_LINES ${file.totalLines}\n${file.content}`,
+        for (const file of result.files) {
+          const mode = file.complete ? "FULL" : `L${file.startLine}-${file.endLine}`;
+          parts.push(
+            `FILE ${file.path} ${mode} TOTAL_LINES ${file.totalLines}\n${file.content}`,
+          );
+        }
+        for (const file of result.skippedFiles) {
+          const range =
+            file.startLine && file.endLine
+              ? ` L${file.startLine}-${file.endLine}`
+              : "";
+          parts.push(`SKIP ${file.path}${range} ${file.reason}`);
+        }
+        if (result.session) {
+          parts.push(`REMAINING ${result.session.remainingTokens}`);
+        }
+
+        return createTextResponse(
+          "repo_read",
+          parts.join("\n\n"),
+          sessionId,
         );
-      }
-      for (const file of result.skippedFiles) {
-        const range =
-          file.startLine && file.endLine
-            ? ` L${file.startLine}-${file.endLine}`
-            : "";
-        parts.push(`SKIP ${file.path}${range} ${file.reason}`);
-      }
-      if (result.session) {
-        parts.push(`REMAINING ${result.session.remainingTokens}`);
-      }
-
-      return createTextResponse(
-        "repo_read",
-        parts.join("\n\n"),
-        sessionId,
-      );
-    },
+      }),
   );
 
   server.registerTool(
@@ -335,17 +372,22 @@ export function createRepoScopeServer(): McpServer {
       }),
     },
     async ({ targetPath, task, budgetTokens }) => {
-      const result = await startSession({
-        targetPath,
-        task,
-        budgetTokens,
-      });
+      let startedSessionId: string | undefined;
 
-      return createTextResponse(
-        "repo_session_start",
-        JSON.stringify(result),
-        result.sessionId,
-      );
+      return measuredTool("repo_session_start", () => startedSessionId, async () => {
+        const result = await startSession({
+          targetPath,
+          task,
+          budgetTokens,
+        });
+        startedSessionId = result.sessionId;
+
+        return createTextResponse(
+          "repo_session_start",
+          JSON.stringify(result),
+          result.sessionId,
+        );
+      });
     },
   );
 

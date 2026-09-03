@@ -1,20 +1,19 @@
-import { resolve, join, relative } from "node:path";
+import { relative } from "node:path";
+
+import { parseCliArgs } from "./cli";
 import { buildContext } from "./core";
-import type { ContextRequest } from "./types";
 import {
   appendMonitoringEvent,
   readMonitoringEvents,
   summarizeMonitoring,
 } from "./monitoring";
-import { OUTPUT_FILES, writeJson, writeText } from "./output";
-import { parseCliArgs } from "./cli";
+import { writeJson, writeText } from "./output";
+import { ensureProjectState } from "./state";
 
 async function main() {
   const request = parseCliArgs(process.argv);
-
   const {
     targetPath,
-    task,
     searchTerms,
     budgetTokens: contextBudget,
   } = request;
@@ -22,7 +21,7 @@ async function main() {
   console.log(`Scanning: ${targetPath}`);
 
   const coreResult = await buildContext(request);
-
+  const state = await ensureProjectState(targetPath);
   const fileEntries = coreResult.fileEntries;
 
   console.log("");
@@ -42,12 +41,7 @@ async function main() {
     );
   }
 
-  const contextPacket = coreResult.contextPacket;
-  const monitoringEvent = coreResult.monitoringEvent;
-
-  const contextPacketPath = join(targetPath, OUTPUT_FILES.contextPacket);
-
-  await writeText(contextPacketPath, contextPacket);
+  await writeText(state.contextPacketPath, coreResult.contextPacket);
 
   console.log(`Found ${fileEntries.length} files:`);
 
@@ -55,43 +49,32 @@ async function main() {
     console.log(`${file.path} (${file.sizeBytes} bytes)`);
   }
 
-  const repoMapPath = join(targetPath, OUTPUT_FILES.repoMap);
-
-  await writeJson(repoMapPath, coreResult.repoMap);
-
-  const monitoringLogPath = join(targetPath, OUTPUT_FILES.monitoringLog);
-
-  await appendMonitoringEvent(monitoringLogPath, monitoringEvent);
-
-  const events = await readMonitoringEvents(monitoringLogPath);
-
-  const monitoringSummary = summarizeMonitoring(events);
-
-  const monitoringSummaryPath = join(
-    targetPath,
-    OUTPUT_FILES.monitoringSummary,
+  await writeJson(state.repoMapPath, coreResult.repoMap);
+  await appendMonitoringEvent(
+    state.monitoringLogPath,
+    coreResult.monitoringEvent,
   );
 
-  await writeJson(monitoringSummaryPath, monitoringSummary);
+  const events = await readMonitoringEvents(state.monitoringLogPath);
+  const monitoringSummary = summarizeMonitoring(events);
+
+  await writeJson(state.monitoringSummaryPath, monitoringSummary);
 
   console.log("");
   console.log("Monitoring Summary");
   console.log("------------------");
   console.log(`Tasks: ${monitoringSummary.totalTasks}`);
-
   console.log(
     `Whole repo baseline: ${monitoringSummary.wholeRepoBaselineTokens} tokens`,
   );
-
   console.log(
     `Selected context: ${monitoringSummary.selectedContextTokens} tokens`,
   );
-
   console.log(`Saved: ${monitoringSummary.savedTokens} tokens`);
-
   console.log(`Reduction: ${monitoringSummary.reductionPercent.toFixed(2)}%`);
-
-  console.log(`Repo map saved to: ${repoMapPath}`);
+  console.log(`Repo map saved to: ${state.repoMapPath}`);
+  console.log(`RepoScope state: ${state.projectDir}`);
+  console.log(`Context budget: ${contextBudget} tokens`);
 }
 
 main();

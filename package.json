@@ -9,8 +9,7 @@
     "check": "npm run typecheck && npm test",
     "cli": "tsx src/index.ts",
     "mcp": "tsx src/mcp.mts",
-    "mcp:http": "tsx src/mcp-http.mts",
-    "mcp:test": "tsx src/mcp-test.mts"
+    "mcp:http": "tsx src/mcp-http.mts"
   },
   "engines": {
     "node": ">=20"

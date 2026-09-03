@@ -11,10 +11,17 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 const execFileAsync = promisify(execFile);
 
-function textFrom(result: Awaited<ReturnType<Client["callTool"]>>): string {
+type TextToolResult = {
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: string; [key: string]: unknown }
+  >;
+};
+
+function textFrom(result: TextToolResult): string {
   const block = result.content.find((item) => item.type === "text");
 
-  if (!block || block.type !== "text") {
+  if (!block || block.type !== "text" || typeof block.text !== "string") {
     throw new Error("Tool did not return text");
   }
 
@@ -55,7 +62,7 @@ test("stdio MCP exposes and completes a local repository session", async () => {
         budgetTokens: 500,
       },
     });
-    const started = JSON.parse(textFrom(startResult)) as {
+    const started = JSON.parse(textFrom(startResult as TextToolResult)) as {
       sessionId: string;
     };
 
@@ -66,7 +73,7 @@ test("stdio MCP exposes and completes a local repository session", async () => {
         outcome: "success",
       },
     });
-    const report = JSON.parse(textFrom(finishResult)) as {
+    const report = JSON.parse(textFrom(finishResult as TextToolResult)) as {
       outcome: string;
       verification: { status: string };
       metrics: { status: string };
@@ -80,7 +87,7 @@ test("stdio MCP exposes and completes a local repository session", async () => {
       name: "repo_session_status",
       arguments: { sessionId: started.sessionId },
     });
-    const status = JSON.parse(textFrom(statusResult)) as {
+    const status = JSON.parse(textFrom(statusResult as TextToolResult)) as {
       status: string;
       outcome: string;
     };

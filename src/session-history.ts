@@ -43,6 +43,15 @@ export type ProjectSessionHistoryReport = {
     netContextReductionPercent: number;
     utilizationPercent: number;
     toolOverheadPercent: number;
+    latency: {
+      repoSessionStartMs: number;
+      repoSearchMs: number;
+      repoReadMs: number;
+      repoContextMs: number;
+      scanCacheHitPercent: number;
+      scanAverageMs: number;
+      searchRgAverageRunMs: number;
+    };
   };
   recentSessions: Array<{
     sessionId: string;
@@ -58,6 +67,14 @@ export type ProjectSessionHistoryReport = {
     readCount: number;
     sourceReductionPercent: number;
     netContextReductionPercent: number;
+    latency?: {
+      repoSessionStartMs: number;
+      repoSearchMs: number;
+      repoReadMs: number;
+      repoContextMs: number;
+      scanCacheHitPercent: number;
+      searchRgAverageRunMs: number;
+    };
   }>;
 };
 
@@ -87,6 +104,15 @@ function metricValues(
   key: NumericSessionMetricKey,
 ): number[] {
   return reports.map((report) => report.metrics[key]);
+}
+
+function latencyValues(
+  reports: SessionFinishReport[],
+  select: (report: SessionFinishReport) => number,
+): number[] {
+  return reports
+    .filter((report) => report.metrics.latency !== undefined)
+    .map(select);
 }
 
 export async function persistSessionReport(
@@ -177,6 +203,50 @@ export async function buildProjectSessionHistoryReport(
       ),
       utilizationPercent: average(metricValues(reports, "utilizationPercent")),
       toolOverheadPercent: average(metricValues(reports, "toolOverheadPercent")),
+      latency: {
+        repoSessionStartMs: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.repoSessionStart.averageMs,
+          ),
+        ),
+        repoSearchMs: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.repoSearch.averageMs,
+          ),
+        ),
+        repoReadMs: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.repoRead.averageMs,
+          ),
+        ),
+        repoContextMs: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.repoContext.averageMs,
+          ),
+        ),
+        scanCacheHitPercent: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.scan.cacheHitPercent,
+          ),
+        ),
+        scanAverageMs: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.scan.averageMs,
+          ),
+        ),
+        searchRgAverageRunMs: average(
+          latencyValues(
+            reports,
+            (report) => report.metrics.latency!.searchRg.averageRunMs,
+          ),
+        ),
+      },
     },
     recentSessions: reports
       .slice(-10)
@@ -195,6 +265,19 @@ export async function buildProjectSessionHistoryReport(
         readCount: report.metrics.readCount,
         sourceReductionPercent: report.metrics.sourceReductionPercent,
         netContextReductionPercent: report.metrics.netContextReductionPercent,
+        latency: report.metrics.latency
+          ? {
+              repoSessionStartMs:
+                report.metrics.latency.repoSessionStart.averageMs,
+              repoSearchMs: report.metrics.latency.repoSearch.averageMs,
+              repoReadMs: report.metrics.latency.repoRead.averageMs,
+              repoContextMs: report.metrics.latency.repoContext.averageMs,
+              scanCacheHitPercent:
+                report.metrics.latency.scan.cacheHitPercent,
+              searchRgAverageRunMs:
+                report.metrics.latency.searchRg.averageRunMs,
+            }
+          : undefined,
       })),
   };
 }

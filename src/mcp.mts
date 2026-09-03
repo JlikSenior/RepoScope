@@ -6,9 +6,16 @@ import * as z from "zod/v4";
 
 import { buildContext, readRepo, searchRepo } from "./core.js";
 import { createTextResponse } from "./mcp-response.js";
-import { summarizeSession } from "./monitoring.js";
+import {
+  buildSessionFinishReport,
+  summarizeSession,
+} from "./monitoring.js";
 import { listAllowedCommands, runAllowedCommand } from "./runner.js";
-import { getSession, startSession } from "./sessions.js";
+import {
+  finishSession,
+  getSessionRecord,
+  startSession,
+} from "./sessions.js";
 import {
   applySessionPatch,
   getSessionRepoDiff,
@@ -62,26 +69,28 @@ export function createRepoScopeServer(): McpServer {
         );
       }
 
-      const responseText = JSON.stringify({
-        contextPacket: result.contextPacket,
-        selectedFiles: result.selectedFiles.map((file) => file.path),
-        skippedFiles: result.skippedFiles,
-        selectionSource: result.monitoringEvent.selectionSource,
-        session: result.session
-          ? {
-              usedTokens: result.session.usedTokens,
-              remainingTokens: result.session.remainingTokens,
-            }
-          : undefined,
-        tokens: {
-          wholeRepo: result.wholeRepoTokens,
-          selected: result.selectedTokens,
-          saved: result.savedTokens,
-          reductionPercent: result.reductionPercent,
-        },
-      });
-
-      return createTextResponse("repo_context", responseText, sessionId);
+      return createTextResponse(
+        "repo_context",
+        JSON.stringify({
+          contextPacket: result.contextPacket,
+          selectedFiles: result.selectedFiles.map((file) => file.path),
+          skippedFiles: result.skippedFiles,
+          selectionSource: result.monitoringEvent.selectionSource,
+          session: result.session
+            ? {
+                usedTokens: result.session.usedTokens,
+                remainingTokens: result.session.remainingTokens,
+              }
+            : undefined,
+          tokens: {
+            wholeRepo: result.wholeRepoTokens,
+            selected: result.selectedTokens,
+            saved: result.savedTokens,
+            reductionPercent: result.reductionPercent,
+          },
+        }),
+        sessionId,
+      );
     },
   );
 
@@ -223,13 +232,10 @@ export function createRepoScopeServer(): McpServer {
         sessionId,
       });
       const header = result.truncated ? "DIFF_TRUNCATED" : "DIFF";
-      const responseText = result.diff
-        ? `${header}\n${result.diff}`
-        : "NO_DIFF";
 
       return createTextResponse(
         "repo_diff",
-        responseText,
+        result.diff ? `${header}\n${result.diff}` : "NO_DIFF",
         sessionId,
       );
     },
@@ -247,13 +253,10 @@ export function createRepoScopeServer(): McpServer {
     },
     async ({ targetPath, sessionId }) => {
       const commands = await listAllowedCommands({ targetPath, sessionId });
-      const responseText = commands.length
-        ? `COMMANDS\n${commands.join("\n")}`
-        : "NO_COMMANDS";
 
       return createTextResponse(
         "repo_commands",
-        responseText,
+        commands.length ? `COMMANDS\n${commands.join("\n")}` : "NO_COMMANDS",
         sessionId,
       );
     },
@@ -280,13 +283,12 @@ export function createRepoScopeServer(): McpServer {
         timeoutMs,
         sessionId,
       });
-      const responseText = result.truncated
-        ? `OUTPUT_TRUNCATED\n${result.output}`
-        : result.output;
 
       return createTextResponse(
         "repo_run",
-        responseText,
+        result.truncated
+          ? `OUTPUT_TRUNCATED\n${result.output}`
+          : result.output,
         sessionId,
       );
     },
@@ -296,7 +298,7 @@ export function createRepoScopeServer(): McpServer {
     "repo_session_start",
     {
       description:
-        "Start a repository exploration session with a total token budget.",
+        "Start a local repository task session with a total source-token budget.",
       inputSchema: z.object({
         targetPath: z.string(),
         task: z.string(),
@@ -319,34 +321,54 @@ export function createRepoScopeServer(): McpServer {
   );
 
   server.registerTool(
+    "repo_session_finish",
+    {
+      description:
+        "Finish and lock a session. Agent-reported outcome is kept separate from command-based verification.",
+      inputSchema: z.object({
+        sessionId: z.string(),
+        outcome: z.enum(["success", "failed", "abandoned"]),
+        note: z.string().max(2000).optional(),
+      }),
+    },
+    async ({ sessionId, outcome, note }) => {
+      const session = finishSession(sessionId, outcome, note);
+      const report = buildSessionFinishReport(session);
+
+      return createTextResponse(
+        "repo_session_finish",
+        JSON.stringify(report),
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
     "repo_session_status",
     {
       description:
-        "Get token usage, exploration history, command runs, and remaining budget for a session.",
+        "Get metrics and history for an active or finished repository session.",
       inputSchema: z.object({
         sessionId: z.string(),
       }),
     },
     async ({ sessionId }) => {
-      const session = getSession(sessionId);
+      const session = getSessionRecord(sessionId);
 
       if (!session) {
         throw new Error("Session not found");
       }
 
-      const metrics = summarizeSession(session);
-      const result = {
-        ...metrics,
-        deliveredByTool: session.deliveredByTool,
-        readFiles: session.readFiles,
-        events: session.events,
-      };
-
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(result),
+            text: JSON.stringify({
+              ...summarizeSession(session),
+              deliveredByTool: session.deliveredByTool,
+              readFiles: session.readFiles,
+              events: session.events,
+            }),
           },
         ],
       };

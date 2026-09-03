@@ -20,6 +20,24 @@ Use RepoScope to control repository context. The goal is to solve the task while
 9. If the repository exposes approved verification commands, use `repo_commands` and `repo_run` when verification is useful.
 10. Finish with `repo_session_finish`, using an outcome that reflects the actual result.
 
+## Investigation protocol
+
+For debugging, correctness review, or "is this implementation wrong?" tasks:
+
+1. State the exact question or hypothesis before broadening exploration.
+2. Trace the shortest direct evidence chain: producer -> transformation -> consumer.
+3. Prefer current implementation, tests, concrete inputs, logs, or reproducible examples as evidence.
+4. Keep conclusions labeled mentally as **confirmed**, **suspected**, or **unknown**. Do not promote a suspicion to a root cause without direct evidence.
+5. When practical, look for a counterexample or reproducer that distinguishes the leading hypothesis from plausible alternatives.
+6. Use conversation history, Git history, or broad metadata only when the current-code evidence chain has a specific unresolved gap that those sources can answer.
+7. Stop exploring once the evidence is sufficient for the user's requested confidence level.
+
+## Loop guard
+
+- Do not repeat the same failed tool call with materially identical inputs.
+- After a repeated identical failure with no new evidence, change strategy or report the limitation instead of retrying indefinitely.
+- A retry should be justified by a concrete change in inputs, context, or expected outcome.
+
 ## Context rules
 
 - Do not scan or read the whole repository by default.

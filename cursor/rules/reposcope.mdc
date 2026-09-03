@@ -16,9 +16,13 @@ For coding tasks in this project, use RepoScope MCP as the repository context ga
 - Do not use Cursor built-in codebase search, grep, semantic search, or direct source-file reads to discover or inspect repository code while RepoScope is available.
 - Do not silently bypass RepoScope if a RepoScope search/read/context call fails. Report the limitation instead.
 - Acquire source incrementally. Do not request or read the whole repository by default.
+- For debugging, correctness review, or investigation tasks, state the concrete question or hypothesis first, then follow the shortest direct producer -> transformation -> consumer evidence chain. Prefer current code, tests, and reproducible inputs over conversation history or broad Git history.
+- Keep claims separated as confirmed, suspected, or unknown. Do not declare a root cause without direct code/test/data evidence that supports it and, when practical, a counterexample or reproducer that distinguishes it from alternatives.
+- Search conversation history, commit history, or broad unrelated metadata only when a specific unresolved evidence gap makes it necessary.
+- Do not repeat the same failed tool call with materially identical inputs. If the same failure occurs again without new information, stop the loop, change strategy, or report the limitation.
 - Cursor may use its normal reasoning and editing facilities after the relevant source has been obtained through RepoScope.
 - RepoScope guarded patching requires complete reads of existing files; partial ranges are intentionally insufficient for that guarded write path.
 - Use repository-approved verification when useful.
 - Finish the RepoScope task session with `repo_session_finish` when the task is complete or abandoned.
 
-This rule controls repository context acquisition; RepoScope is not the reasoning model or editor.
+This rule controls repository context acquisition and investigation discipline; RepoScope is not the reasoning model or editor.

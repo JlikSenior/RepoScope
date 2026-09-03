@@ -7,6 +7,7 @@ import * as z from "zod/v4";
 import { buildContext, readRepo, searchRepo } from "./core.js";
 import { createTextResponse } from "./mcp-response.js";
 import { summarizeSession } from "./monitoring.js";
+import { listAllowedCommands, runAllowedCommand } from "./runner.js";
 import { getSession, startSession } from "./sessions.js";
 import {
   applySessionPatch,
@@ -235,6 +236,63 @@ export function createRepoScopeServer(): McpServer {
   );
 
   server.registerTool(
+    "repo_commands",
+    {
+      description:
+        "List repository commands explicitly allowlisted in .reposcope.json.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, sessionId }) => {
+      const commands = await listAllowedCommands({ targetPath, sessionId });
+      const responseText = commands.length
+        ? `COMMANDS\n${commands.join("\n")}`
+        : "NO_COMMANDS";
+
+      return createTextResponse(
+        "repo_commands",
+        responseText,
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_run",
+    {
+      description:
+        "Run one command allowlisted by the repository. The agent cannot supply an executable or arguments.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        command: z.string().min(1),
+        budgetTokens: z.number().int().min(32).max(16000),
+        timeoutMs: z.number().int().min(1000).max(300000).optional(),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, command, budgetTokens, timeoutMs, sessionId }) => {
+      const result = await runAllowedCommand({
+        targetPath,
+        command,
+        budgetTokens,
+        timeoutMs,
+        sessionId,
+      });
+      const responseText = result.truncated
+        ? `OUTPUT_TRUNCATED\n${result.output}`
+        : result.output;
+
+      return createTextResponse(
+        "repo_run",
+        responseText,
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
     "repo_session_start",
     {
       description:
@@ -264,7 +322,7 @@ export function createRepoScopeServer(): McpServer {
     "repo_session_status",
     {
       description:
-        "Get token usage, exploration history, and remaining budget for a session.",
+        "Get token usage, exploration history, command runs, and remaining budget for a session.",
       inputSchema: z.object({
         sessionId: z.string(),
       }),

@@ -59,6 +59,17 @@ export type ProjectSessionHistoryReport = {
   }>;
 };
 
+type NumericSessionMetricKey =
+  | "usedTokens"
+  | "deliveredTokens"
+  | "uniqueFilesRead"
+  | "searchCount"
+  | "readCount"
+  | "sourceReductionPercent"
+  | "netContextReductionPercent"
+  | "utilizationPercent"
+  | "toolOverheadPercent";
+
 function round(value: number): number {
   return Number(value.toFixed(2));
 }
@@ -66,6 +77,13 @@ function round(value: number): number {
 function average(values: number[]): number {
   if (values.length === 0) return 0;
   return round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function metricValues(
+  reports: SessionFinishReport[],
+  key: NumericSessionMetricKey,
+): number[] {
+  return reports.map((report) => report.metrics[key]);
 }
 
 export async function persistSessionReport(
@@ -133,11 +151,6 @@ export async function buildProjectSessionHistoryReport(
     verification[report.verification.status] += 1;
   }
 
-  const metric = <K extends keyof SessionFinishReport["metrics"]>(key: K) =>
-    reports
-      .map((report) => report.metrics[key])
-      .filter((value): value is number => typeof value === "number");
-
   return {
     schemaVersion: 1,
     projectId: paths.projectId,
@@ -147,15 +160,19 @@ export async function buildProjectSessionHistoryReport(
     outcomes,
     verification,
     averages: {
-      usedTokens: average(metric("usedTokens")),
-      deliveredTokens: average(metric("deliveredTokens")),
-      uniqueFilesRead: average(metric("uniqueFilesRead")),
-      searchCount: average(metric("searchCount")),
-      readCount: average(metric("readCount")),
-      sourceReductionPercent: average(metric("sourceReductionPercent")),
-      netContextReductionPercent: average(metric("netContextReductionPercent")),
-      utilizationPercent: average(metric("utilizationPercent")),
-      toolOverheadPercent: average(metric("toolOverheadPercent")),
+      usedTokens: average(metricValues(reports, "usedTokens")),
+      deliveredTokens: average(metricValues(reports, "deliveredTokens")),
+      uniqueFilesRead: average(metricValues(reports, "uniqueFilesRead")),
+      searchCount: average(metricValues(reports, "searchCount")),
+      readCount: average(metricValues(reports, "readCount")),
+      sourceReductionPercent: average(
+        metricValues(reports, "sourceReductionPercent"),
+      ),
+      netContextReductionPercent: average(
+        metricValues(reports, "netContextReductionPercent"),
+      ),
+      utilizationPercent: average(metricValues(reports, "utilizationPercent")),
+      toolOverheadPercent: average(metricValues(reports, "toolOverheadPercent")),
     },
     recentSessions: reports
       .slice(-10)

@@ -28,6 +28,8 @@ import type {
 
 const encoding = getEncoding("cl100k_base");
 const MAX_CONTEXT_CANDIDATES = 50;
+const DEFAULT_SEARCH_LIMIT = 20;
+const MAX_SEARCH_LIMIT = 100;
 
 function buildContextPacket(
   task: string,
@@ -68,6 +70,14 @@ function validateSessionForRepo(
   }
 }
 
+function normalizeSearchLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) {
+    return DEFAULT_SEARCH_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.floor(limit), 1), MAX_SEARCH_LIMIT);
+}
+
 export async function searchRepo(
   request: RepoSearchRequest,
 ): Promise<RepoSearchResult> {
@@ -75,7 +85,8 @@ export async function searchRepo(
   validateSessionForRepo(request.sessionId, targetPath);
 
   const searchResults = await searchFiles(targetPath, request.searchTerms);
-  const results = searchResults.map((result) => ({
+  const limit = normalizeSearchLimit(request.limit);
+  const results = searchResults.slice(0, limit).map((result) => ({
     path: relative(targetPath, result.path),
     score: result.score,
   }));

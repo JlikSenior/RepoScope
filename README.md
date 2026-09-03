@@ -6,7 +6,7 @@ The core is intentionally AI-provider agnostic: the agent does the reasoning; Re
 
 ## Current status
 
-Early MVP. Read/exploration works on real repositories, guarded text-patch writes are available behind a session, allowlisted verification commands can be executed without arbitrary shell access, and the same MCP tool surface can be served over stdio or loopback HTTP.
+Early MVP. Read/exploration works on real repositories, guarded text-patch writes are available behind a session, allowlisted verification commands can be executed without arbitrary command strings, and the same MCP tool surface can be served over stdio or loopback HTTP.
 
 ## Requirements
 
@@ -122,12 +122,13 @@ Write tools deliberately do **not** provide arbitrary filesystem or shell access
 - Binary patches are rejected.
 - `git apply --check` must succeed before the patch is applied.
 - Modified files invalidate their old read state so the agent can reread the new version.
+- `.reposcope.json` is a protected policy file and cannot be changed through `repo_apply_patch`.
 
 `repo_diff` is output-budgeted so a large working-tree diff cannot unexpectedly consume the agent's context.
 
 ## Allowlisted test/build execution
 
-RepoScope still does **not** expose arbitrary command execution. A repository opts into executable checks with a root-level `.reposcope.json` file:
+RepoScope still does **not** expose arbitrary command strings. A repository opts into executable checks with a root-level `.reposcope.json` file:
 
 ```json
 {
@@ -150,10 +151,11 @@ The format is language-independent. For another repository it can just as easily
 }
 ```
 
-The safety model is intentionally narrow:
+The command-selection safety model is intentionally narrow:
 
 - The Agent chooses only an allowlisted **command name** such as `test` or `build`.
 - The executable and argument vector come entirely from `.reposcope.json`; the Agent cannot supply or append shell arguments.
+- `.reposcope.json` cannot be created, edited, renamed, or deleted through RepoScope's patch tool.
 - Commands run with `shell: false` in the Git repository root.
 - Executable entries containing paths such as `../tool` or `./script` are rejected; use an executable available on `PATH`.
 - Each run has a configurable timeout capped at 5 minutes.
@@ -161,7 +163,7 @@ The safety model is intentionally narrow:
 - Non-zero test/build exits are returned to the Agent as diagnostic output rather than being hidden as tool errors.
 - Session metrics record total command runs and failed runs.
 
-This gives an Agent enough authority to verify its code while keeping general shell execution out of the tool surface.
+This is **not an operating-system sandbox**. Approved tests and builds execute repository code with the permissions of the RepoScope process. The allowlist controls which verification entrypoints an Agent may select; it does not make untrusted repository code safe to execute.
 
 ## Token metrics
 
@@ -192,7 +194,7 @@ npm run check
 
 `npm run check` is the CI gate and runs both type checking and the full automated test suite. Production source files under `src/` do not contain ad-hoc `*-test` harnesses.
 
-Current coverage includes repository scanning/search boundaries, task budgets and cross-tool deduplication, guarded patch writes, diff/status behavior, post-write rereads, allowlisted command execution and output budgets, and the HTTP MCP transport/tool surface.
+Current coverage includes repository scanning/search boundaries, task budgets and cross-tool deduplication, guarded patch writes, diff/status behavior, post-write rereads, protected command policy files, allowlisted command execution and output budgets, and the HTTP MCP transport/tool surface.
 
 ## Next milestones
 

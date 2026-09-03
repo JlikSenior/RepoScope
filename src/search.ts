@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 
 import { recordSearchRgPerformance } from "./performance";
+import { scanDirectoryEntries } from "./scanner";
 
 const execFileAsync = promisify(execFile);
 const MAX_MATCHES_PER_FILE = 5;
@@ -151,7 +152,12 @@ export async function searchFiles(
     }
   }
 
+  const aiReadableFiles = new Set(
+    (await scanDirectoryEntries(targetPath)).map((entry) => entry.path),
+  );
+
   return [...matchedKeywordIndices.entries()]
+    .filter(([path]) => aiReadableFiles.has(path))
     .map(([path, matchedIndices]) => {
       const selectedMatches = [...(candidateMatches.get(path)?.values() ?? [])]
         .sort(

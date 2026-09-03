@@ -8,6 +8,7 @@ import {
 } from "./git";
 import {
   getSession,
+  invalidateReadFiles,
   recordSessionEvent,
 } from "./sessions";
 import type {
@@ -70,6 +71,7 @@ export async function applySessionPatch(request: {
     patch: request.patch,
   });
 
+  invalidateReadFiles(request.sessionId, result.files);
   recordSessionEvent(request.sessionId, {
     type: "write",
     timestamp: new Date().toISOString(),

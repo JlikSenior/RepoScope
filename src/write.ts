@@ -62,7 +62,7 @@ export async function applySessionPatch(request: {
 
   if (unreadFiles.length > 0) {
     throw new Error(
-      `Existing files must be fully read before RepoScope patch modification: ${unreadFiles.join(", ")}`,
+      `Existing files must be read before modification; files must be fully read before RepoScope patch modification: ${unreadFiles.join(", ")}`,
     );
   }
 

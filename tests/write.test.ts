@@ -87,3 +87,50 @@ test("a modified file can be read again after its stale read state is invalidate
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("repo_apply_patch accepts a valid text patch without a final newline", async () => {
+  const root = await createFixture();
+
+  try {
+    const session = await startSession({
+      targetPath: root,
+      task: "update value without patch newline",
+      budgetTokens: 1000,
+    });
+
+    await readRepo({
+      targetPath: root,
+      files: ["src/value.ts"],
+      budgetTokens: 1000,
+      sessionId: session.sessionId,
+    });
+
+    const patchWithoutFinalNewline = [
+      "--- a/src/value.ts",
+      "+++ b/src/value.ts",
+      "@@ -1 +1 @@",
+      '-export const value = "before";',
+      '+export const value = "after";',
+    ].join("\n");
+
+    assert.equal(patchWithoutFinalNewline.endsWith("\n"), false);
+
+    const applied = await applySessionPatch({
+      targetPath: root,
+      patch: patchWithoutFinalNewline,
+      sessionId: session.sessionId,
+    });
+
+    assert.deepEqual(applied.files, ["src/value.ts"]);
+
+    const reread = await readRepo({
+      targetPath: root,
+      files: ["src/value.ts"],
+      budgetTokens: 1000,
+      sessionId: session.sessionId,
+    });
+    assert.match(reread.files[0].content, /after/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

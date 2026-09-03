@@ -88,6 +88,14 @@ async function resolveGitRoot(targetPath: string): Promise<string> {
   return gitRoot;
 }
 
+function normalizePatchInput(patch: string): string {
+  if (!patch) {
+    return patch;
+  }
+
+  return patch.endsWith("\n") ? patch : `${patch}\n`;
+}
+
 function validatePatchPath(path: string): string {
   const normalized = path.trim();
 
@@ -218,18 +226,19 @@ export async function applyRepoPatch(
 ): Promise<RepoApplyPatchResult> {
   const plan = await planRepoPatch(request);
   const commonArgs = ["--recount", "--whitespace=nowarn", "-"];
+  const normalizedPatch = normalizePatchInput(request.patch);
 
   await runProcess(
     "git",
     ["-C", plan.targetPath, "apply", "--check", ...commonArgs],
     plan.targetPath,
-    request.patch,
+    normalizedPatch,
   );
   await runProcess(
     "git",
     ["-C", plan.targetPath, "apply", ...commonArgs],
     plan.targetPath,
-    request.patch,
+    normalizedPatch,
   );
 
   return {

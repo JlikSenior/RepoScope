@@ -22,6 +22,8 @@ test("HTTP MCP handler exposes RepoScope tools", async () => {
     assert(names.includes("repo_search"));
     assert(names.includes("repo_read"));
     assert(names.includes("repo_apply_patch"));
+    assert(names.includes("repo_commands"));
+    assert(names.includes("repo_run"));
   } finally {
     await client.close();
     await handler.close();

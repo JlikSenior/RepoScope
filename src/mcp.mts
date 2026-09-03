@@ -1,43 +1,18 @@
-import { resolve } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
 import { buildContext, readRepo, searchRepo } from "./core.js";
-import {
-  applyRepoPatch,
-  getRepoDiff,
-  getRepoStatus,
-  planRepoPatch,
-} from "./git.js";
 import { createTextResponse } from "./mcp-response.js";
 import { summarizeSession } from "./monitoring.js";
+import { getSession, startSession } from "./sessions.js";
 import {
-  getSession,
-  recordSessionEvent,
-  startSession,
-} from "./sessions.js";
-import type { TaskSession } from "./types.js";
+  applySessionPatch,
+  getSessionRepoDiff,
+  getSessionRepoStatus,
+} from "./write.js";
 
 const MAX_STATUS_LINES = 200;
-
-function requireSessionForRepo(
-  sessionId: string,
-  targetPath: string,
-): TaskSession {
-  const session = getSession(sessionId);
-
-  if (!session) {
-    throw new Error("Session not found");
-  }
-
-  if (session.targetPath !== resolve(targetPath)) {
-    throw new Error("Session does not belong to this repository");
-  }
-
-  return session;
-}
 
 function createServer() {
   const server = new McpServer({
@@ -154,17 +129,14 @@ function createServer() {
         budgetTokens,
         sessionId,
       });
-
       const parts: string[] = [];
 
       for (const file of result.files) {
         parts.push(`FILE ${file.path}\n${file.content}`);
       }
-
       for (const file of result.skippedFiles) {
         parts.push(`SKIP ${file.path} ${file.reason}`);
       }
-
       if (result.session) {
         parts.push(`REMAINING ${result.session.remainingTokens}`);
       }
@@ -188,8 +160,7 @@ function createServer() {
       }),
     },
     async ({ targetPath, sessionId }) => {
-      requireSessionForRepo(sessionId, targetPath);
-      const result = await getRepoStatus({ targetPath });
+      const result = await getSessionRepoStatus({ targetPath, sessionId });
       const visibleLines = result.lines.slice(0, MAX_STATUS_LINES);
       const parts = visibleLines.length > 0 ? [...visibleLines] : ["CLEAN"];
 
@@ -209,7 +180,7 @@ function createServer() {
     "repo_apply_patch",
     {
       description:
-        "Apply a validated text patch inside the Git repository. Existing files must have been read in the current session first.",
+        "Apply a validated text patch. Existing files must have been read in the current session first.",
       inputSchema: z.object({
         targetPath: z.string(),
         patch: z.string().min(1),
@@ -217,23 +188,10 @@ function createServer() {
       }),
     },
     async ({ targetPath, patch, sessionId }) => {
-      const session = requireSessionForRepo(sessionId, targetPath);
-      const plan = await planRepoPatch({ targetPath, patch });
-      const unreadFiles = plan.existingFiles.filter(
-        (file) => !(file in session.readFiles),
-      );
-
-      if (unreadFiles.length > 0) {
-        throw new Error(
-          `Existing files must be read before modification: ${unreadFiles.join(", ")}`,
-        );
-      }
-
-      const result = await applyRepoPatch({ targetPath, patch });
-      recordSessionEvent(sessionId, {
-        type: "write",
-        timestamp: new Date().toISOString(),
-        files: result.files,
+      const result = await applySessionPatch({
+        targetPath,
+        patch,
+        sessionId,
       });
 
       return createTextResponse(
@@ -256,10 +214,10 @@ function createServer() {
       }),
     },
     async ({ targetPath, budgetTokens, sessionId }) => {
-      requireSessionForRepo(sessionId, targetPath);
-      const result = await getRepoDiff({
+      const result = await getSessionRepoDiff({
         targetPath,
         budgetTokens,
+        sessionId,
       });
       const header = result.truncated ? "DIFF_TRUNCATED" : "DIFF";
       const responseText = result.diff

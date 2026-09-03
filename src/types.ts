@@ -223,6 +223,22 @@ export type SessionLatencyMetrics = {
   };
 };
 
+export type SearchQualityMetrics = {
+  uniqueSearchResults: number;
+  uniqueSearchResultsRead: number;
+  searchResultReadConversionPercent: number;
+  uniqueFilesRead: number;
+  readFilesFoundBySearch: number;
+  readFilesNotFoundBySearch: number;
+  searchCoveragePercent: number;
+  averageBestRankOfReadFiles: number;
+  top1ReadHitRatePercent: number;
+  top3ReadHitRatePercent: number;
+  top5ReadHitRatePercent: number;
+  repeatedSearchCount: number;
+  repeatedSearchPercent: number;
+};
+
 export type TaskSession = {
   id: string;
   targetPath: string;
@@ -343,6 +359,7 @@ export type SessionMetrics = {
   sourceLinesRead: number;
   utilizationPercent: number;
   latency?: SessionLatencyMetrics;
+  searchQuality?: SearchQualityMetrics;
 };
 
 export type SessionFinishReport = {

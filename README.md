@@ -139,17 +139,19 @@ RepoScope keeps two different concepts separate:
 
 RepoScope uses `rg --files`, so it respects normal ignore rules such as `.gitignore`. It also excludes common binary/resource formats and files larger than 1 MiB by default. Requested reads must resolve to a file in the scanned repository set, preventing path traversal outside the target repository.
 
-## Development
+## Development and tests
+
+All automated tests live under `tests/` and are executed by the standard project entrypoints:
 
 ```bash
+npm test
+npm run typecheck
 npm run check
 ```
 
-For the current manual stdio MCP end-to-end harness:
+`npm run check` is the CI gate and runs both type checking and the full automated test suite. Production source files under `src/` do not contain ad-hoc `*-test` harnesses.
 
-```bash
-npm run mcp:test
-```
+Current coverage includes repository scanning/search boundaries, task budgets and cross-tool deduplication, guarded patch writes, diff/status behavior, post-write rereads, and the HTTP MCP transport/tool surface.
 
 ## Next milestones
 

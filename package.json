@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts tests/*.test.mts",
     "benchmark:pilot:check": "node --check benchmarks/pilot/verify.mjs",
-    "package:check": "npm run build && node --check dist/bin.mjs",
+    "package:check": "npm run build && node scripts/check-package.mjs",
     "check": "npm run typecheck && npm test && npm run benchmark:pilot:check && npm run package:check",
     "benchmark:report": "tsx src/benchmark-report.ts",
     "benchmark:pilot:verify": "node benchmarks/pilot/verify.mjs",

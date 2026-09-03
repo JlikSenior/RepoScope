@@ -2,11 +2,32 @@
 
 RepoScope is a **local-first Repository Context Gateway for AI coding agents**.
 
-Its job is not to understand code or replace the Agent. Claude Code, Codex, or another local MCP-capable Agent does the reasoning. RepoScope controls how that Agent touches the repository so it can complete a task with less irrelevant source context, a hard task-level budget, deduplication, and measurable delivery metrics.
+Its job is not to understand code or replace the Agent. Claude Code, Codex, Cursor, or another local MCP-capable Agent does the reasoning. RepoScope controls how that Agent touches the repository so it can complete a task with less irrelevant source context, a hard task-level budget, deduplication, and measurable delivery metrics.
 
 The product hypothesis is simple:
 
 > **Keep verified task success close to the normal Agent baseline while materially reducing repository/model context.**
+
+## Quick start with Cursor
+
+RepoScope can be installed without a machine-specific checkout path:
+
+```bash
+npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install
+```
+
+This one-time command:
+
+- adds a global Cursor stdio MCP entry that itself launches RepoScope through `npx`,
+- installs the global `reposcope` Agent Skill,
+- installs the explicit `reposcope-benchmark` Skill for controlled experiments,
+- preserves existing Cursor MCP servers.
+
+After installation, restart Cursor or reload MCPs. The configured MCP command follows the GitHub `main` branch and uses npm's fresh-cache check, so RepoScope updates do not require changing a local project path.
+
+The repository is currently private, so the machine running Cursor must already have GitHub Git access configured.
+
+See [`docs/cursor.md`](docs/cursor.md) for details.
 
 ## Product boundary
 
@@ -33,11 +54,17 @@ Cross-tool deduplication
 Session metrics
 ```
 
-The Agent remains responsible for understanding the task, generating search terms, deciding which files matter, reasoning about code, and choosing the next exploration step.
+The Agent remains responsible for understanding the task, generating search terms, deciding which files matter, reasoning about code, editing code, and choosing the next exploration step.
 
 ## Local MCP server
 
-RepoScope is designed to be spawned locally by a coding Agent over **stdio**:
+RepoScope is designed to be spawned locally over **stdio**. The packaged executable defaults to MCP mode:
+
+```bash
+npx -y --prefer-online github:JlikSenior/RepoScope#main
+```
+
+For RepoScope development from a checkout:
 
 ```bash
 npm install
@@ -69,6 +96,15 @@ start
 ```
 
 The Agent should not request the whole repository by default.
+
+## Agent Skills
+
+RepoScope ships two portable Skills:
+
+- `skills/reposcope/SKILL.md` — normal coding workflow. It makes RepoScope the repository search/read/context gateway while leaving reasoning and editing to the Agent.
+- `skills/reposcope-benchmark/SKILL.md` — explicit benchmark mode with stricter no-fallback rules.
+
+`cursor-install` copies both into `~/.agents/skills/`, which Cursor discovers globally.
 
 ## Integration utilities
 
@@ -137,21 +173,11 @@ Record each run as one JSONL object, then generate the report:
 npm run benchmark:report -- ./benchmark-results.jsonl
 ```
 
-The report compares:
+The report compares reported/verified success, files read, repository source tokens, provider-observed model tokens when available, duration/tool calls, and paired reductions.
 
-- reported success rate
-- **verified success rate**
-- files read
-- repository source tokens
-- provider-observed model input/output tokens when available
-- duration/tool calls when available
-- paired context reductions
+A/B pairing is strict: `repository + commit + taskId + agent + trial` must match, with exactly one baseline and one RepoScope run. Missing or duplicated arms are excluded from reduction calculations.
 
-A/B pairing is strict: `repository + commit + taskId + agent + trial` must match, with exactly one baseline and one RepoScope run. Missing or duplicated arms are reported and excluded from reduction calculations.
-
-See [`docs/benchmark.md`](docs/benchmark.md) for the schema and experimental protocol.
-
-The first executable pilot lives in [`benchmarks/pilot/`](benchmarks/pilot/README.md). It replays five real problems from the original RepoScope prototype against a fixed historical commit, with independent external verifiers and a strict baseline-vs-RepoScope procedure.
+See [`docs/benchmark.md`](docs/benchmark.md) for the protocol and [`benchmarks/pilot/`](benchmarks/pilot/README.md) for the first executable pilot.
 
 ## Safe write policy
 
@@ -179,15 +205,25 @@ RepoScope does not expose arbitrary shell strings. Repositories may opt into ver
 }
 ```
 
-The format is language-independent; another project could allow `pytest`, `cargo`, or `cmake` commands.
-
-The Agent chooses only the command **name**. Executable and argv come from repository-controlled configuration, commands run with `shell: false`, timeout is capped, and returned output is bounded.
+The format is language-independent. The Agent chooses only the command name; executable and argv come from repository-controlled configuration, commands run with `shell: false`, timeout is capped, and returned output is bounded.
 
 This is command-selection control, **not an OS sandbox**. Approved tests/builds execute repository code with the permissions of the RepoScope process.
 
 ## Repository boundary
 
 RepoScope uses `rg --files`, respects normal ignore rules such as `.gitignore`, excludes common binary/resource formats and files over 1 MiB by default, and only allows explicit reads from the scanned repository set.
+
+## Packaging
+
+The repository contains an npm `bin` entry and a production TypeScript build. Git installs use the npm `prepare` lifecycle to compile `dist/` before the executable is used.
+
+Current zero-path package spec:
+
+```text
+github:JlikSenior/RepoScope#main
+```
+
+The same executable can later be published to the npm registry without changing the MCP interface. Registry publication is intentionally separate from the package/runtime implementation.
 
 ## Development
 
@@ -204,13 +240,13 @@ Run the full validation suite:
 npm run check
 ```
 
-All automated tests live under `tests/`. The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, Pilot manifest/verifier checks, and a real end-to-end **stdio MCP** lifecycle test.
+The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, Cursor installer tests, compiled-package MCP runtime checks, Pilot checks, and a real stdio MCP lifecycle test.
 
 ## Current development priority
 
-The MVP already has enough tools to run real coding experiments. The priority is now evidence, not feature count:
+The MVP has enough capability to run real coding experiments. The priority is evidence and usability rather than feature count:
 
-1. run paired baseline vs RepoScope tasks on real repositories
-2. measure verified success and context cost together
-3. improve localization/search only when benchmark evidence shows it is needed
-4. optimize performance only where real task traces justify it
+1. make local-Agent installation frictionless,
+2. run paired baseline vs RepoScope tasks on real repositories,
+3. measure verified success and context cost together,
+4. improve localization/search only when benchmark evidence shows it is needed.

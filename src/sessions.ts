@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { scanDirectory } from "./scanner";
+import {
+  scanDirectoryEntries,
+  type ScannedFileEntry,
+} from "./scanner";
 import type {
   RepoLineRange,
   SessionEvent,
@@ -13,17 +15,7 @@ import type {
 } from "./types";
 
 const sessions = new Map<string, TaskSession>();
-
-async function estimateWholeRepoTokens(files: string[]): Promise<number> {
-  const sizes = await Promise.all(
-    files.map(async (file) => {
-      const fileStat = await stat(file);
-      return Math.ceil(fileStat.size / 4);
-    }),
-  );
-
-  return sizes.reduce((sum, tokens) => sum + tokens, 0);
-}
+const sessionRepoSnapshots = new Map<string, Map<string, ScannedFileEntry>>();
 
 function mergeRanges(ranges: RepoLineRange[]): RepoLineRange[] {
   const sorted = ranges
@@ -50,8 +42,11 @@ export async function startSession(
 ): Promise<StartSessionResult> {
   const id = randomUUID();
   const targetPath = resolve(request.targetPath);
-  const files = await scanDirectory(targetPath);
-  const wholeRepoTokens = await estimateWholeRepoTokens(files);
+  const entries = await scanDirectoryEntries(targetPath);
+  const wholeRepoTokens = entries.reduce(
+    (sum, entry) => sum + entry.estimatedTokens,
+    0,
+  );
 
   const session: TaskSession = {
     id,
@@ -71,6 +66,10 @@ export async function startSession(
   };
 
   sessions.set(id, session);
+  sessionRepoSnapshots.set(
+    id,
+    new Map(entries.map((entry) => [entry.path, entry] as const)),
+  );
 
   return {
     sessionId: id,
@@ -109,6 +108,33 @@ export function getActiveSession(sessionId: string): TaskSession {
   return session;
 }
 
+export function getSessionRepoEntries(sessionId: string): ScannedFileEntry[] {
+  getActiveSession(sessionId);
+  return [...(sessionRepoSnapshots.get(sessionId)?.values() ?? [])];
+}
+
+export function getSessionRepoEntry(
+  sessionId: string,
+  filePath: string,
+): ScannedFileEntry | undefined {
+  getActiveSession(sessionId);
+  return sessionRepoSnapshots.get(sessionId)?.get(resolve(filePath));
+}
+
+export function registerSessionRepoEntry(
+  sessionId: string,
+  entry: ScannedFileEntry,
+): void {
+  getActiveSession(sessionId);
+  const snapshot = sessionRepoSnapshots.get(sessionId);
+
+  if (!snapshot) {
+    throw new Error("Session repository snapshot not found");
+  }
+
+  snapshot.set(entry.path, entry);
+}
+
 export function finishSession(
   sessionId: string,
   outcome: SessionOutcome,
@@ -128,6 +154,7 @@ export function finishSession(
     outcome,
     note: normalizedNote,
   });
+  sessionRepoSnapshots.delete(sessionId);
 
   return session;
 }

@@ -6,6 +6,7 @@ import {
   getRepoStatus,
   planRepoPatch,
 } from "./git";
+import { invalidateDirectoryScan } from "./scanner";
 import {
   getSession,
   invalidateReadFiles,
@@ -72,6 +73,7 @@ export async function applySessionPatch(request: {
   });
 
   invalidateReadFiles(request.sessionId, result.files);
+  invalidateDirectoryScan(request.targetPath);
   recordSessionEvent(request.sessionId, {
     type: "write",
     timestamp: new Date().toISOString(),

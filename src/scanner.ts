@@ -7,8 +7,9 @@ import { OUTPUT_FILES } from "./output";
 
 const execFileAsync = promisify(execFile);
 
-const MAX_AI_FILE_SIZE_BYTES =
-  1024 * 1024;
+const MAX_AI_FILE_SIZE_BYTES = 1024 * 1024;
+const STAT_BATCH_SIZE = 128;
+const SCAN_CACHE_TTL_MS = 15_000;
 
 const IGNORED_FILES = new Set([
   OUTPUT_FILES.repoMap,
@@ -36,79 +37,128 @@ const IGNORED_EXTENSIONS = new Set([
   ".mp3",
   ".mp4",
   ".mov",
-
-  // 编译产物 / 二进制
   ".a",
   ".o",
   ".so",
   ".dll",
   ".exe",
   ".deb",
-
-  // 3D / 大型资源
   ".obj",
   ".stl",
   ".dae",
 ]);
 
-export async function scanDirectory(
-  directoryPath: string,
-): Promise<string[]> {
-  const targetPath = resolve(directoryPath);
+export type ScannedFileEntry = {
+  path: string;
+  sizeBytes: number;
+  estimatedTokens: number;
+};
 
+type ScanCacheEntry = {
+  expiresAt: number;
+  entries: ScannedFileEntry[];
+};
+
+const scanCache = new Map<string, ScanCacheEntry>();
+const scansInFlight = new Map<string, Promise<ScannedFileEntry[]>>();
+
+function passesStaticAiReadableRules(filePath: string): boolean {
+  const fileName = basename(filePath);
+
+  if (IGNORED_FILES.has(fileName)) return false;
+
+  const extension = extname(fileName).toLowerCase();
+  return !IGNORED_EXTENSIONS.has(extension);
+}
+
+export async function getScannedFileEntry(
+  filePath: string,
+): Promise<ScannedFileEntry | undefined> {
+  const path = resolve(filePath);
+
+  if (!passesStaticAiReadableRules(path)) return undefined;
+
+  try {
+    const fileStat = await stat(path);
+
+    if (!fileStat.isFile() || fileStat.size > MAX_AI_FILE_SIZE_BYTES) {
+      return undefined;
+    }
+
+    return {
+      path,
+      sizeBytes: fileStat.size,
+      estimatedTokens: Math.ceil(fileStat.size / 4),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function performDirectoryScan(
+  targetPath: string,
+): Promise<ScannedFileEntry[]> {
   const { stdout } = await execFileAsync(
     "rg",
-    [
-      "--files",
-
-      // 允许 .github、.vscode 等隐藏源码配置，
-      // 但仍然尊重 .gitignore
-      "--hidden",
-
-      // 不读取 .git 本身
-      "-g",
-      "!.git",
-
-      targetPath,
-    ],
-    {
-      maxBuffer: 50 * 1024 * 1024,
-    },
+    ["--files", "--hidden", "-g", "!.git", targetPath],
+    { maxBuffer: 50 * 1024 * 1024 },
   );
 
   const candidates = stdout
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((file) => resolve(file));
+    .map((file) => resolve(file))
+    .filter(passesStaticAiReadableRules);
 
-  const files: string[] = [];
+  const entries: ScannedFileEntry[] = [];
 
-  for (const file of candidates) {
-    const fileName = basename(file);
+  for (let index = 0; index < candidates.length; index += STAT_BATCH_SIZE) {
+    const batch = candidates.slice(index, index + STAT_BATCH_SIZE);
+    const batchEntries = await Promise.all(batch.map(getScannedFileEntry));
 
-    if (IGNORED_FILES.has(fileName)) {
-      continue;
+    for (const entry of batchEntries) {
+      if (entry) entries.push(entry);
     }
-
-    const extension =
-      extname(fileName).toLowerCase();
-
-    if (IGNORED_EXTENSIONS.has(extension)) {
-      continue;
-    }
-
-    const fileStat = await stat(file);
-
-    if (
-      fileStat.size >
-      MAX_AI_FILE_SIZE_BYTES
-    ) {
-      continue;
-    }
-
-    files.push(file);
   }
 
-  return files;
+  return entries;
+}
+
+export function invalidateDirectoryScan(directoryPath: string): void {
+  scanCache.delete(resolve(directoryPath));
+}
+
+export async function scanDirectoryEntries(
+  directoryPath: string,
+): Promise<ScannedFileEntry[]> {
+  const targetPath = resolve(directoryPath);
+  const now = Date.now();
+  const cached = scanCache.get(targetPath);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.entries;
+  }
+
+  const existingScan = scansInFlight.get(targetPath);
+  if (existingScan) return existingScan;
+
+  const scan = performDirectoryScan(targetPath);
+  scansInFlight.set(targetPath, scan);
+
+  try {
+    const entries = await scan;
+    scanCache.set(targetPath, {
+      entries,
+      expiresAt: Date.now() + SCAN_CACHE_TTL_MS,
+    });
+    return entries;
+  } finally {
+    scansInFlight.delete(targetPath);
+  }
+}
+
+export async function scanDirectory(directoryPath: string): Promise<string[]> {
+  const entries = await scanDirectoryEntries(directoryPath);
+  return entries.map((entry) => entry.path);
 }

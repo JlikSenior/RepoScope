@@ -16,6 +16,7 @@ function run(overrides: Partial<BenchmarkRun>): BenchmarkRun {
     agent: "codex",
     repository: "example/repo",
     commit: "abc123",
+    trial: "1",
     outcome: "success",
     verification: "passed",
     metrics: {},
@@ -109,4 +110,16 @@ test("benchmark marks repeated task arms as ambiguous instead of averaging them"
 
   assert.equal(summary.pairing.completePairs, 0);
   assert.equal(summary.pairing.ambiguousKeys, 1);
+});
+
+test("benchmark does not pair runs from different commits or trials", () => {
+  const summary = summarizeBenchmark([
+    run({ runId: "baseline-commit", mode: "baseline", commit: "abc123" }),
+    run({ runId: "reposcope-commit", mode: "reposcope", commit: "def456" }),
+    run({ runId: "baseline-trial", mode: "baseline", taskId: "task-2", trial: "1" }),
+    run({ runId: "reposcope-trial", mode: "reposcope", taskId: "task-2", trial: "2" }),
+  ]);
+
+  assert.equal(summary.pairing.completePairs, 0);
+  assert.equal(summary.pairing.incompleteKeys, 4);
 });

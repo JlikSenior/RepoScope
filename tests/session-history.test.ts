@@ -87,6 +87,21 @@ test("finished session reports persist per project and aggregate into a trend re
       metrics: {
         ...makeReport("b").metrics,
         outcome: "failed",
+        searchQuality: {
+          uniqueSearchResults: 10,
+          uniqueSearchResultsRead: 4,
+          searchResultReadConversionPercent: 40,
+          uniqueFilesRead: 5,
+          readFilesFoundBySearch: 4,
+          readFilesNotFoundBySearch: 1,
+          searchCoveragePercent: 80,
+          averageBestRankOfReadFiles: 2.5,
+          top1ReadHitRatePercent: 20,
+          top3ReadHitRatePercent: 60,
+          top5ReadHitRatePercent: 80,
+          repeatedSearchCount: 1,
+          repeatedSearchPercent: 25,
+        },
       },
     });
 
@@ -118,10 +133,24 @@ test("finished session reports persist per project and aggregate into a trend re
     assert.equal(summary.averages.uniqueFilesRead, 4.5);
     assert.equal(summary.averages.sourceLinesRead, 200);
     assert.equal(summary.averages.sourceReductionPercent, 98);
+    assert.equal(
+      summary.averages.searchQuality.searchResultReadConversionPercent,
+      40,
+    );
+    assert.equal(summary.averages.searchQuality.searchCoveragePercent, 80);
+    assert.equal(
+      summary.averages.searchQuality.averageBestRankOfReadFiles,
+      2.5,
+    );
     assert.deepEqual(
       summary.recentSessions.map((session) => session.sessionId),
       ["b", "a"],
     );
+    assert.equal(
+      summary.recentSessions[0].searchQuality?.repeatedSearchPercent,
+      25,
+    );
+    assert.equal(summary.recentSessions[1].searchQuality, undefined);
   } finally {
     await rm(project, { recursive: true, force: true });
     await rm(stateRoot, { recursive: true, force: true });

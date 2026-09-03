@@ -97,6 +97,38 @@ start
 
 The Agent should not request the whole repository by default.
 
+## Multi-project state isolation
+
+RepoScope may be installed globally and used across many repositories, but project state is **not global**.
+
+Each repository is canonicalized with `realpath` and assigned a stable id derived from the canonical path. RepoScope-owned diagnostic/state files live outside the target repository under a per-project directory:
+
+```text
+<RepoScope state root>/
+  projects/
+    <project-id-A>/
+      project.json
+      cli/
+        context-packet.md
+        repo-map.json
+        monitoring-log.jsonl
+        monitoring-summary.json
+    <project-id-B>/
+      ...
+```
+
+Two repositories with the same folder name still receive different project ids. Different symlink paths to the same repository resolve to the same project id.
+
+Default state roots:
+
+- Linux: `$XDG_STATE_HOME/reposcope` or `~/.local/state/reposcope`
+- macOS: `~/Library/Application Support/RepoScope/state`
+- Windows: `%LOCALAPPDATA%/RepoScope/state`
+
+Set `REPOSCOPE_STATE_DIR` to override the entire state root.
+
+The normal MCP path currently keeps task sessions in memory. Every session has a UUID and is bound to its canonical target repository, so a session created for one project cannot be reused against another project. Future persistent sessions/caches should use the same per-project state layout rather than writing into target repositories.
+
 ## Agent Skills
 
 RepoScope ships two portable Skills:
@@ -240,7 +272,7 @@ Run the full validation suite:
 npm run check
 ```
 
-The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, Cursor installer tests, compiled-package MCP runtime checks, Pilot checks, and a real stdio MCP lifecycle test.
+The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, per-project state isolation, Cursor installer tests, compiled-package MCP runtime checks, Pilot checks, and a real stdio MCP lifecycle test.
 
 ## Current development priority
 

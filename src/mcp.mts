@@ -6,6 +6,13 @@ import { buildContext, readRepo, searchRepo } from "./core.js";
 import { createTextResponse } from "./mcp-response.js";
 import { summarizeSession } from "./monitoring.js";
 import { getSession, startSession } from "./sessions.js";
+import {
+  applySessionPatch,
+  getSessionRepoDiff,
+  getSessionRepoStatus,
+} from "./write.js";
+
+const MAX_STATUS_LINES = 200;
 
 function createServer() {
   const server = new McpServer({
@@ -122,17 +129,14 @@ function createServer() {
         budgetTokens,
         sessionId,
       });
-
       const parts: string[] = [];
 
       for (const file of result.files) {
         parts.push(`FILE ${file.path}\n${file.content}`);
       }
-
       for (const file of result.skippedFiles) {
         parts.push(`SKIP ${file.path} ${file.reason}`);
       }
-
       if (result.session) {
         parts.push(`REMAINING ${result.session.remainingTokens}`);
       }
@@ -140,6 +144,89 @@ function createServer() {
       return createTextResponse(
         "repo_read",
         parts.join("\n\n"),
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_status",
+    {
+      description:
+        "Show the current Git working-tree status for the session repository.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, sessionId }) => {
+      const result = await getSessionRepoStatus({ targetPath, sessionId });
+      const visibleLines = result.lines.slice(0, MAX_STATUS_LINES);
+      const parts = visibleLines.length > 0 ? [...visibleLines] : ["CLEAN"];
+
+      if (result.lines.length > visibleLines.length) {
+        parts.push(`TRUNCATED ${result.lines.length - visibleLines.length}`);
+      }
+
+      return createTextResponse(
+        "repo_status",
+        parts.join("\n"),
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_apply_patch",
+    {
+      description:
+        "Apply a validated text patch. Existing files must have been read in the current session first.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        patch: z.string().min(1),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, patch, sessionId }) => {
+      const result = await applySessionPatch({
+        targetPath,
+        patch,
+        sessionId,
+      });
+
+      return createTextResponse(
+        "repo_apply_patch",
+        `APPLIED\n${result.files.join("\n")}`,
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_diff",
+    {
+      description:
+        "Return the current Git diff within a strict output token budget.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        budgetTokens: z.number().int().min(1).max(16000),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, budgetTokens, sessionId }) => {
+      const result = await getSessionRepoDiff({
+        targetPath,
+        budgetTokens,
+        sessionId,
+      });
+      const header = result.truncated ? "DIFF_TRUNCATED" : "DIFF";
+      const responseText = result.diff
+        ? `${header}\n${result.diff}`
+        : "NO_DIFF";
+
+      return createTextResponse(
+        "repo_diff",
+        responseText,
         sessionId,
       );
     },

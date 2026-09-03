@@ -137,6 +137,37 @@ export type RepoReadResult = {
   };
 };
 
+export type RepoStatusRequest = {
+  targetPath: string;
+};
+
+export type RepoStatusResult = {
+  targetPath: string;
+  lines: string[];
+};
+
+export type RepoApplyPatchRequest = {
+  targetPath: string;
+  patch: string;
+};
+
+export type RepoApplyPatchResult = {
+  targetPath: string;
+  files: string[];
+};
+
+export type RepoDiffRequest = {
+  targetPath: string;
+  budgetTokens: number;
+};
+
+export type RepoDiffResult = {
+  targetPath: string;
+  diff: string;
+  tokens: number;
+  truncated: boolean;
+};
+
 export type TaskSession = {
   id: string;
   targetPath: string;
@@ -179,6 +210,11 @@ export type SessionEvent =
       tokens: number;
     }
   | {
+      type: "write";
+      timestamp: string;
+      files: string[];
+    }
+  | {
       type: "blocked";
       timestamp: string;
       action: "read" | "context";
@@ -199,6 +235,7 @@ export type SessionMetrics = {
   netContextReductionPercent: number;
   searchCount: number;
   readCount: number;
+  writeCount: number;
   blockedReadCount: number;
   blockedContextCount: number;
   uniqueFilesRead: number;

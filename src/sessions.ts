@@ -113,6 +113,21 @@ export function recordReadFile(
   session.readFiles[filePath] = tokens;
 }
 
+export function invalidateReadFiles(
+  sessionId: string,
+  files: string[],
+): void {
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    throw new Error("Session not found");
+  }
+
+  for (const file of files) {
+    delete session.readFiles[file];
+  }
+}
+
 export function consumeTokens(sessionId: string, tokens: number) {
   const session = sessions.get(sessionId);
 

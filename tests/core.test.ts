@@ -7,8 +7,14 @@ import { afterEach, test } from "node:test";
 import { promisify } from "node:util";
 
 import { buildContext, readRepo, searchRepo } from "../src/core";
+import { summarizeSession } from "../src/monitoring";
 import { scanDirectory } from "../src/scanner";
-import { startSession } from "../src/sessions";
+import { getSession, startSession } from "../src/sessions";
+import {
+  applySessionPatch,
+  getSessionRepoDiff,
+  getSessionRepoStatus,
+} from "../src/write";
 
 const execFileAsync = promisify(execFile);
 const fixtures: string[] = [];
@@ -37,6 +43,22 @@ async function createFixture(): Promise<string> {
   await writeFile(
     join(root, "ignored/generated.ts"),
     'export const generated = "ignore me";\n',
+  );
+
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync(
+    "git",
+    [
+      "-c",
+      "user.name=RepoScope Test",
+      "-c",
+      "user.email=reposcope@example.com",
+      "commit",
+      "-q",
+      "-m",
+      "fixture",
+    ],
+    { cwd: root },
   );
 
   return root;
@@ -156,4 +178,133 @@ test("session budget blocks source delivery without going negative", async () =>
   assert.equal(read.skippedFiles[0]?.reason, "context_budget_exceeded");
   assert.equal(read.session?.usedTokens, 0);
   assert.equal(read.session?.remainingTokens, 1);
+});
+
+test("existing files must be read before a patch can modify them", async () => {
+  const root = await createFixture();
+  const session = await startSession({
+    targetPath: root,
+    task: "change feature",
+    budgetTokens: 1000,
+  });
+  const patch = [
+    "diff --git a/src/feature.ts b/src/feature.ts",
+    "--- a/src/feature.ts",
+    "+++ b/src/feature.ts",
+    "@@ -1,3 +1,3 @@",
+    " export function feature() {",
+    '-  return "enabled";',
+    '+  return "disabled";',
+    " }",
+    "",
+  ].join("\n");
+
+  await assert.rejects(
+    applySessionPatch({
+      targetPath: root,
+      patch,
+      sessionId: session.sessionId,
+    }),
+    /Existing files must be read before modification/,
+  );
+
+  await readRepo({
+    targetPath: root,
+    files: ["src/feature.ts"],
+    budgetTokens: 1000,
+    sessionId: session.sessionId,
+  });
+
+  const applied = await applySessionPatch({
+    targetPath: root,
+    patch,
+    sessionId: session.sessionId,
+  });
+
+  assert.deepEqual(applied.files, ["src/feature.ts"]);
+
+  const status = await getSessionRepoStatus({
+    targetPath: root,
+    sessionId: session.sessionId,
+  });
+  assert(status.lines.some((line) => line.includes("src/feature.ts")));
+
+  const diff = await getSessionRepoDiff({
+    targetPath: root,
+    budgetTokens: 1000,
+    sessionId: session.sessionId,
+  });
+  assert.match(diff.diff, /return "disabled"/);
+  assert.equal(diff.truncated, false);
+
+  const storedSession = getSession(session.sessionId);
+  assert(storedSession);
+  assert.equal(summarizeSession(storedSession).writeCount, 1);
+});
+
+test("diff output obeys its token budget", async () => {
+  const root = await createFixture();
+  const session = await startSession({
+    targetPath: root,
+    task: "change feature",
+    budgetTokens: 1000,
+  });
+  const patch = [
+    "diff --git a/src/feature.ts b/src/feature.ts",
+    "--- a/src/feature.ts",
+    "+++ b/src/feature.ts",
+    "@@ -1,3 +1,3 @@",
+    " export function feature() {",
+    '-  return "enabled";',
+    '+  return "disabled";',
+    " }",
+    "",
+  ].join("\n");
+
+  await readRepo({
+    targetPath: root,
+    files: ["src/feature.ts"],
+    budgetTokens: 1000,
+    sessionId: session.sessionId,
+  });
+  await applySessionPatch({
+    targetPath: root,
+    patch,
+    sessionId: session.sessionId,
+  });
+
+  const diff = await getSessionRepoDiff({
+    targetPath: root,
+    budgetTokens: 1,
+    sessionId: session.sessionId,
+  });
+
+  assert.equal(diff.truncated, true);
+  assert.equal(diff.tokens, 1);
+});
+
+test("patch paths cannot escape the repository", async () => {
+  const root = await createFixture();
+  const session = await startSession({
+    targetPath: root,
+    task: "unsafe patch",
+    budgetTokens: 1000,
+  });
+  const patch = [
+    "diff --git a/../escape.ts b/../escape.ts",
+    "--- a/../escape.ts",
+    "+++ b/../escape.ts",
+    "@@ -0,0 +1 @@",
+    "+export const escaped = true;",
+    "",
+  ].join("\n");
+
+  await assert.rejects(
+    applySessionPatch({
+      targetPath: root,
+      patch,
+      sessionId: session.sessionId,
+    }),
+    /Unsafe patch path/,
+  );
 });

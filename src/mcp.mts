@@ -1,11 +1,43 @@
+import { resolve } from "node:path";
+
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
 import { buildContext, readRepo, searchRepo } from "./core.js";
+import {
+  applyRepoPatch,
+  getRepoDiff,
+  getRepoStatus,
+  planRepoPatch,
+} from "./git.js";
 import { createTextResponse } from "./mcp-response.js";
 import { summarizeSession } from "./monitoring.js";
-import { getSession, startSession } from "./sessions.js";
+import {
+  getSession,
+  recordSessionEvent,
+  startSession,
+} from "./sessions.js";
+import type { TaskSession } from "./types.js";
+
+const MAX_STATUS_LINES = 200;
+
+function requireSessionForRepo(
+  sessionId: string,
+  targetPath: string,
+): TaskSession {
+  const session = getSession(sessionId);
+
+  if (!session) {
+    throw new Error("Session not found");
+  }
+
+  if (session.targetPath !== resolve(targetPath)) {
+    throw new Error("Session does not belong to this repository");
+  }
+
+  return session;
+}
 
 function createServer() {
   const server = new McpServer({
@@ -140,6 +172,103 @@ function createServer() {
       return createTextResponse(
         "repo_read",
         parts.join("\n\n"),
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_status",
+    {
+      description:
+        "Show the current Git working-tree status for the session repository.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, sessionId }) => {
+      requireSessionForRepo(sessionId, targetPath);
+      const result = await getRepoStatus({ targetPath });
+      const visibleLines = result.lines.slice(0, MAX_STATUS_LINES);
+      const parts = visibleLines.length > 0 ? [...visibleLines] : ["CLEAN"];
+
+      if (result.lines.length > visibleLines.length) {
+        parts.push(`TRUNCATED ${result.lines.length - visibleLines.length}`);
+      }
+
+      return createTextResponse(
+        "repo_status",
+        parts.join("\n"),
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_apply_patch",
+    {
+      description:
+        "Apply a validated text patch inside the Git repository. Existing files must have been read in the current session first.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        patch: z.string().min(1),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, patch, sessionId }) => {
+      const session = requireSessionForRepo(sessionId, targetPath);
+      const plan = await planRepoPatch({ targetPath, patch });
+      const unreadFiles = plan.existingFiles.filter(
+        (file) => !(file in session.readFiles),
+      );
+
+      if (unreadFiles.length > 0) {
+        throw new Error(
+          `Existing files must be read before modification: ${unreadFiles.join(", ")}`,
+        );
+      }
+
+      const result = await applyRepoPatch({ targetPath, patch });
+      recordSessionEvent(sessionId, {
+        type: "write",
+        timestamp: new Date().toISOString(),
+        files: result.files,
+      });
+
+      return createTextResponse(
+        "repo_apply_patch",
+        `APPLIED\n${result.files.join("\n")}`,
+        sessionId,
+      );
+    },
+  );
+
+  server.registerTool(
+    "repo_diff",
+    {
+      description:
+        "Return the current Git diff within a strict output token budget.",
+      inputSchema: z.object({
+        targetPath: z.string(),
+        budgetTokens: z.number().int().min(1).max(16000),
+        sessionId: z.string(),
+      }),
+    },
+    async ({ targetPath, budgetTokens, sessionId }) => {
+      requireSessionForRepo(sessionId, targetPath);
+      const result = await getRepoDiff({
+        targetPath,
+        budgetTokens,
+      });
+      const header = result.truncated ? "DIFF_TRUNCATED" : "DIFF";
+      const responseText = result.diff
+        ? `${header}\n${result.diff}`
+        : "NO_DIFF";
+
+      return createTextResponse(
+        "repo_diff",
+        responseText,
         sessionId,
       );
     },

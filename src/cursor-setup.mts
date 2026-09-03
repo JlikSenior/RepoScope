@@ -11,6 +11,7 @@ export type CursorInstallResult = {
   scope: CursorInstallScope;
   mcpConfigPath: string;
   skillPaths: string[];
+  rulePath?: string;
   packageSpec: string;
   projectRoot?: string;
 };
@@ -76,6 +77,21 @@ async function installSkill(
   return target;
 }
 
+async function installProjectRule(
+  packageRoot: string,
+  cursorDir: string,
+): Promise<string> {
+  const source = join(packageRoot, "cursor", "rules", "reposcope.mdc");
+  const targetDir = join(cursorDir, "rules");
+  const target = join(targetDir, "reposcope.mdc");
+  const content = await readFile(source, "utf8");
+
+  await mkdir(targetDir, { recursive: true });
+  await writeFile(target, content, "utf8");
+
+  return target;
+}
+
 export async function installCursorIntegration(options?: {
   scope?: CursorInstallScope;
   projectRoot?: string;
@@ -129,11 +145,16 @@ export async function installCursorIntegration(options?: {
     installSkill(packageRoot, skillRoot, "reposcope"),
     installSkill(packageRoot, skillRoot, "reposcope-benchmark"),
   ]);
+  const rulePath =
+    scope === "project"
+      ? await installProjectRule(packageRoot, cursorDir)
+      : undefined;
 
   return {
     scope,
     mcpConfigPath,
     skillPaths,
+    rulePath,
     packageSpec,
     projectRoot,
   };

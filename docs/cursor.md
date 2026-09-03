@@ -39,6 +39,16 @@ Because the GitHub repository is currently private, the local machine must alrea
 
 `--prefer-online` asks npm to check for a fresher package even when a cached copy exists, so the MCP config can follow the current `main` branch without being edited after RepoScope updates.
 
+## Multiple projects
+
+The global Cursor MCP entry is intentionally shared across workspaces, but RepoScope project state is isolated.
+
+Each repository is canonicalized and assigned a path-derived project id. RepoScope-owned diagnostic/state files are kept outside the repository in a project-specific state directory, so opening multiple repositories in Cursor does not mix their logs or diagnostic output.
+
+Task sessions are also bound to the repository they were created for. A `sessionId` from project A cannot be used to search/read/write project B.
+
+You do not need a separate Cursor MCP entry per project.
+
 ## Normal use
 
 After installation, restart Cursor or reload MCPs. In Cursor's Customize view, confirm that:

@@ -1,44 +1,52 @@
 # RepoScope
 
-RepoScope is a **local-first repository context and change-control layer for AI coding agents**. It lets a local Agent search and read only the code it needs, enforce task-level token budgets, measure context delivery, make guarded Git patch edits, run repository-approved verification commands, and finish each task with a truthful report.
+RepoScope is a **local-first Repository Context Gateway for AI coding agents**.
 
-The core is intentionally AI-provider agnostic: Claude Code, Codex, or another local MCP-capable Agent does the reasoning; RepoScope handles repository boundaries, search, reads, context budgets, deduplication, safe writes, verification commands, and observability.
+Its job is not to understand code or replace the Agent. Claude Code, Codex, or another local MCP-capable Agent does the reasoning. RepoScope controls how that Agent touches the repository so it can complete a task with less irrelevant source context, a hard task-level budget, deduplication, and measurable delivery metrics.
 
-## Current status
+The product hypothesis is simple:
 
-Early MVP. The local stdio MCP path supports a complete guarded coding loop: search → read → edit → verify → inspect diff → finish session.
+> **Keep verified task success close to the normal Agent baseline while materially reducing repository/model context.**
 
-## Requirements
+## Product boundary
 
-- Node.js 20+
-- npm
-- Git
-- [ripgrep (`rg`)](https://github.com/BurntSushi/ripgrep) available on `PATH`
+RepoScope Core is intentionally:
 
-On Ubuntu/Debian:
+- zero-AI
+- provider-independent
+- IDE-independent
+- language-independent
+- local-first
+- Agent-driven
+- budget-enforced
+- observable
 
-```bash
-sudo apt install ripgrep
+Core responsibilities:
+
+```text
+Repository boundary
+Search
+Read
+Context delivery
+Task-level token budget
+Cross-tool deduplication
+Session metrics
 ```
 
-## Install
-
-```bash
-npm install
-npm run check
-```
+The Agent remains responsible for understanding the task, generating search terms, deciding which files matter, reasoning about code, and choosing the next exploration step.
 
 ## Local MCP server
 
-RepoScope is designed to be spawned locally by an MCP-capable coding Agent over **stdio**:
+RepoScope is designed to be spawned locally by a coding Agent over **stdio**:
 
 ```bash
+npm install
 npm run mcp
 ```
 
 There is no network transport required for the normal workflow.
 
-### MCP tools
+### Core context tools
 
 | Tool | Purpose |
 | --- | --- |
@@ -46,140 +54,161 @@ There is no network transport required for the normal workflow.
 | `repo_search` | Search with ripgrep and return a bounded ranked result set |
 | `repo_read` | Read explicit repository files under per-call and task-level budgets |
 | `repo_context` | Build a bounded context packet while avoiding already-delivered source |
-| `repo_status` | Inspect Git working-tree status |
-| `repo_apply_patch` | Apply a guarded text patch after existing target files have been read |
-| `repo_diff` | Inspect the current Git diff under an output-token budget |
-| `repo_commands` | List verification commands approved by the repository |
-| `repo_run` | Run one approved command with timeout and output-token limits |
-| `repo_session_status` | Inspect active or finished session metrics and history |
-| `repo_session_finish` | Finish and lock the task, producing a final outcome/verification report |
+| `repo_session_status` | Inspect active or finished session metrics/history |
+| `repo_session_finish` | Finish and lock the task with a final outcome/verification report |
 
-### Intended local Agent loop
+The core exploration loop is:
 
-1. `repo_session_start`
-2. Agent derives a few search terms from the user's task
-3. `repo_search`
-4. `repo_read` only the most relevant files
-5. Agent reasons and repeats search/read only when needed
-6. `repo_apply_patch`
-7. `repo_commands`
-8. `repo_run` tests/type checks/builds approved by the repository
-9. Agent fixes failures and reruns checks as needed
-10. `repo_diff` / `repo_status`
-11. `repo_session_finish`
+```text
+start
+  -> search
+  -> read
+  -> Agent reasons
+  -> search/read only when necessary
+  -> finish
+```
 
 The Agent should not request the whole repository by default.
 
+## Integration utilities
+
+RepoScope also includes guarded utilities so the context layer can be evaluated inside real coding tasks:
+
+| Tool | Purpose |
+| --- | --- |
+| `repo_apply_patch` | Apply a guarded text patch after existing target files have been read |
+| `repo_status` | Inspect Git working-tree status |
+| `repo_diff` | Inspect the current Git diff under an output-token budget |
+| `repo_commands` | List verification commands approved by the repository |
+| `repo_run` | Run one approved verification command with timeout/output limits |
+
+These utilities are **not the core product value**. They exist to support realistic experiments such as:
+
+```text
+search -> read -> edit -> verify -> inspect -> finish
+```
+
+RepoScope is not intended to become a coding Agent, IDE, shell Agent, CI system, language server, or general sandbox.
+
 ## Session completion
 
-`repo_session_finish` separates two concepts that must not be conflated:
+`repo_session_finish` keeps Agent claims separate from objective verification:
 
-- **Reported outcome**: what the Agent declares — `success`, `failed`, or `abandoned`.
-- **Verification**: what RepoScope can objectively infer from the final `repo_run` — `passed`, `failed`, or `not_run`.
+- **Reported outcome**: `success`, `failed`, or `abandoned`.
+- **Verification**: derived from the final approved `repo_run` as `passed`, `failed`, or `not_run`.
 
-For example, an Agent may report `success` while verification is `not_run`. RepoScope preserves both facts rather than treating the task as verified.
+An Agent can therefore report `success` while RepoScope records `verification: not_run` or `failed`. The final report also contains changed files, source/delivery metrics, exploration counts, writes, and command runs.
 
-The final report includes changed files, token metrics, reads/writes, command runs, failed runs, and the last verification result. Finishing a session locks it: normal search/read/write/run tools cannot continue using that session. `repo_session_status` remains available for historical inspection.
+Finishing a session locks it against further normal search/read/write/run operations. `repo_session_status` remains available for historical inspection.
+
+## Token metrics
+
+RepoScope deliberately separates different measurements:
+
+- **`usedTokens`** — source code delivered during the task; this is the enforced source budget.
+- **`deliveredTokens`** — measured MCP response payload tokens for tracked tools.
+- **`wholeRepoTokens`** — fast file-size-based estimate of the AI-readable repository; this is not a provider billing number.
+
+Derived metrics include:
+
+```text
+sourceReductionPercent
+netContextReductionPercent
+toolOverheadTokens
+toolOverheadPercent
+```
+
+Reduction alone is not enough to validate the product. It must be evaluated together with verified task success.
+
+## Benchmarking the product hypothesis
+
+RepoScope includes a small benchmark report harness for paired A/B experiments.
+
+Run the **same Agent** on the **same task and repository commit**:
+
+```text
+A: baseline Agent behavior without RepoScope context control
+B: the same Agent using RepoScope
+```
+
+Record each run as one JSONL object, then generate the report:
+
+```bash
+npm run benchmark:report -- ./benchmark-results.jsonl
+```
+
+The report compares:
+
+- reported success rate
+- **verified success rate**
+- files read
+- repository source tokens
+- provider-observed model input/output tokens when available
+- duration/tool calls when available
+- paired context reductions
+
+A/B pairing is strict: `repository + commit + taskId + agent + trial` must match, with exactly one baseline and one RepoScope run. Missing or duplicated arms are reported and excluded from reduction calculations.
+
+See [`docs/benchmark.md`](docs/benchmark.md) for the schema and experimental protocol.
 
 ## Safe write policy
 
-Write tools deliberately do **not** provide arbitrary filesystem access.
-
-`repo_apply_patch` currently enforces:
+`repo_apply_patch` deliberately does not provide arbitrary filesystem access:
 
 - `targetPath` must be the Git repository root.
 - A valid active task session is required.
-- Existing files touched by the patch must have been read in that same session first.
-- New text files may be introduced without a prior read.
-- Patch paths cannot be absolute, escape with `..`, or target `.git`.
-- Binary patches are rejected.
-- `git apply --check` must succeed before the patch is applied.
-- Modified files invalidate their old read state so the Agent can reread the new version.
-- `.reposcope.json` is a protected policy file and cannot be changed through `repo_apply_patch`.
+- Existing files must have been read in that session before modification.
+- New text files may be introduced.
+- Absolute paths, `..`, `.git`, binary patches, and unsupported quoted paths are rejected.
+- `git apply --check` must pass before application.
+- Modified files invalidate stale read state so the Agent can reread them.
+- `.reposcope.json` is protected from RepoScope patch operations.
 
-`repo_diff` is output-budgeted so a large working-tree diff cannot unexpectedly consume Agent context.
+## Approved test/build commands
 
-## Allowlisted test/build execution
-
-RepoScope does **not** expose arbitrary shell commands. A repository opts into verification entrypoints with a root-level `.reposcope.json` file:
+RepoScope does not expose arbitrary shell strings. Repositories may opt into verification entrypoints through `.reposcope.json`:
 
 ```json
 {
   "commands": {
     "test": ["npm", "test"],
-    "check": ["npm", "run", "check"],
-    "typecheck": ["npm", "run", "typecheck"]
+    "check": ["npm", "run", "check"]
   }
 }
 ```
 
-The format is language-independent. Another repository could use:
+The format is language-independent; another project could allow `pytest`, `cargo`, or `cmake` commands.
 
-```json
-{
-  "commands": {
-    "test": ["pytest", "-q"],
-    "build": ["cargo", "build", "--locked"]
-  }
-}
-```
+The Agent chooses only the command **name**. Executable and argv come from repository-controlled configuration, commands run with `shell: false`, timeout is capped, and returned output is bounded.
 
-Safety model:
-
-- Agent chooses only an approved **command name**.
-- Executable and argv come entirely from `.reposcope.json`.
-- Agent cannot append shell arguments.
-- Commands run with `shell: false` at the Git repository root.
-- Executable entries containing paths such as `../tool` or `./script` are rejected.
-- Timeout is capped at 5 minutes.
-- Captured output and MCP output are bounded.
-- Non-zero exits are returned as diagnostic output so the Agent can fix the code.
-- `.reposcope.json` cannot be modified through RepoScope itself.
-
-This is a command-selection control, **not an OS sandbox**. Approved tests/builds execute repository code with the permissions of the RepoScope process.
-
-## Token metrics
-
-RepoScope keeps source delivery separate from protocol delivery:
-
-- **`usedTokens`**: source code delivered in the task session. This is the source budget.
-- **`deliveredTokens`**: measured MCP response payload tokens for tracked tools.
-- **`wholeRepoTokens`**: a fast file-size-based estimate of the AI-readable repository, not a billing number.
-
-`sourceReductionPercent` compares delivered source with the estimated whole repository. `netContextReductionPercent` also includes tracked MCP response overhead.
-
-`repo_session_status` is excluded from delivered-token accounting to avoid self-referential monitoring payloads.
+This is command-selection control, **not an OS sandbox**. Approved tests/builds execute repository code with the permissions of the RepoScope process.
 
 ## Repository boundary
 
-RepoScope uses `rg --files`, so normal ignore rules such as `.gitignore` are respected. It also excludes common binary/resource formats and files larger than 1 MiB by default. Explicit reads must resolve to the scanned repository file set, preventing path traversal outside the repository.
+RepoScope uses `rg --files`, respects normal ignore rules such as `.gitignore`, excludes common binary/resource formats and files over 1 MiB by default, and only allows explicit reads from the scanned repository set.
 
-## CLI
+## Development
 
-A diagnostic CLI remains available:
+Requirements:
 
-```bash
-npm run cli -- <repo-path> "<task>" <budget-tokens> "term1,term2,term3"
-```
+- Node.js 20+
+- npm
+- Git
+- `ripgrep` (`rg`) on `PATH`
 
-It writes diagnostic artifacts such as `context-packet.md`, `repo-map.json`, and monitoring files into the target repository. For coding Agents, prefer the stdio MCP server.
-
-## Development and tests
-
-All automated tests live under `tests/`:
+Run the full validation suite:
 
 ```bash
-npm test
-npm run typecheck
 npm run check
 ```
 
-`npm run check` is the CI gate. Coverage includes repository boundaries, token budgets, cross-tool deduplication, guarded patches, post-write rereads, allowlisted command execution, protected policy files, session completion/locking, and an end-to-end **stdio MCP** lifecycle test.
+All automated tests live under `tests/`. The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, and a real end-to-end **stdio MCP** lifecycle test.
 
-## Next milestones
+## Current development priority
 
-- Better search ranking without increasing context size
-- Faster repository/session metadata caching
-- Persistent session/task history
-- Aggregate cost-per-successful-task and localization-quality metrics
-- Packaging and simple local-Agent installation/configuration
+The MVP already has enough tools to run real coding experiments. The priority is now evidence, not feature count:
+
+1. run paired baseline vs RepoScope tasks on real repositories
+2. measure verified success and context cost together
+3. improve localization/search only when benchmark evidence shows it is needed
+4. optimize performance only where real task traces justify it

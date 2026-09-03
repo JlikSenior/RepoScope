@@ -110,6 +110,15 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
       : ((session.wholeRepoTokens - session.deliveredTokens) /
           session.wholeRepoTokens) *
         100;
+  const sourceLinesRead = Object.values(session.readRanges).reduce(
+    (sum, ranges) =>
+      sum +
+      ranges.reduce(
+        (rangeSum, range) => rangeSum + range.endLine - range.startLine + 1,
+        0,
+      ),
+    0,
+  );
 
   return {
     sessionId: session.id,
@@ -131,6 +140,7 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
     blockedReadCount,
     blockedContextCount,
     uniqueFilesRead: Object.keys(session.readFiles).length,
+    sourceLinesRead,
     utilizationPercent: Number(utilizationPercent.toFixed(2)),
     toolOverheadTokens,
     toolOverheadPercent: Number(toolOverheadPercent.toFixed(2)),

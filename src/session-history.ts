@@ -52,6 +52,18 @@ export type ProjectSessionHistoryReport = {
       scanAverageMs: number;
       searchRgAverageRunMs: number;
     };
+    searchQuality: {
+      uniqueSearchResults: number;
+      readFilesFoundBySearch: number;
+      readFilesNotFoundBySearch: number;
+      searchResultReadConversionPercent: number;
+      searchCoveragePercent: number;
+      averageBestRankOfReadFiles: number;
+      top1ReadHitRatePercent: number;
+      top3ReadHitRatePercent: number;
+      top5ReadHitRatePercent: number;
+      repeatedSearchPercent: number;
+    };
   };
   recentSessions: Array<{
     sessionId: string;
@@ -74,6 +86,18 @@ export type ProjectSessionHistoryReport = {
       repoContextMs: number;
       scanCacheHitPercent: number;
       searchRgAverageRunMs: number;
+    };
+    searchQuality?: {
+      uniqueSearchResults: number;
+      uniqueSearchResultsRead: number;
+      searchResultReadConversionPercent: number;
+      searchCoveragePercent: number;
+      averageBestRankOfReadFiles: number;
+      top1ReadHitRatePercent: number;
+      top3ReadHitRatePercent: number;
+      top5ReadHitRatePercent: number;
+      repeatedSearchCount: number;
+      repeatedSearchPercent: number;
     };
   }>;
 };
@@ -112,6 +136,19 @@ function latencyValues(
 ): number[] {
   return reports
     .filter((report) => report.metrics.latency !== undefined)
+    .map(select);
+}
+
+function searchQualityValues(
+  reports: SessionFinishReport[],
+  select: (report: SessionFinishReport) => number,
+  include: (report: SessionFinishReport) => boolean = () => true,
+): number[] {
+  return reports
+    .filter(
+      (report) =>
+        report.metrics.searchQuality !== undefined && include(report),
+    )
     .map(select);
 }
 
@@ -247,6 +284,71 @@ export async function buildProjectSessionHistoryReport(
           ),
         ),
       },
+      searchQuality: {
+        uniqueSearchResults: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.uniqueSearchResults,
+          ),
+        ),
+        readFilesFoundBySearch: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.readFilesFoundBySearch,
+          ),
+        ),
+        readFilesNotFoundBySearch: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.readFilesNotFoundBySearch,
+          ),
+        ),
+        searchResultReadConversionPercent: average(
+          searchQualityValues(
+            reports,
+            (report) =>
+              report.metrics.searchQuality!.searchResultReadConversionPercent,
+          ),
+        ),
+        searchCoveragePercent: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.searchCoveragePercent,
+          ),
+        ),
+        averageBestRankOfReadFiles: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.averageBestRankOfReadFiles,
+            (report) =>
+              (report.metrics.searchQuality?.readFilesFoundBySearch ?? 0) > 0,
+          ),
+        ),
+        top1ReadHitRatePercent: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.top1ReadHitRatePercent,
+          ),
+        ),
+        top3ReadHitRatePercent: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.top3ReadHitRatePercent,
+          ),
+        ),
+        top5ReadHitRatePercent: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.top5ReadHitRatePercent,
+          ),
+        ),
+        repeatedSearchPercent: average(
+          searchQualityValues(
+            reports,
+            (report) => report.metrics.searchQuality!.repeatedSearchPercent,
+          ),
+        ),
+      },
     },
     recentSessions: reports
       .slice(-10)
@@ -276,6 +378,30 @@ export async function buildProjectSessionHistoryReport(
                 report.metrics.latency.scan.cacheHitPercent,
               searchRgAverageRunMs:
                 report.metrics.latency.searchRg.averageRunMs,
+            }
+          : undefined,
+        searchQuality: report.metrics.searchQuality
+          ? {
+              uniqueSearchResults:
+                report.metrics.searchQuality.uniqueSearchResults,
+              uniqueSearchResultsRead:
+                report.metrics.searchQuality.uniqueSearchResultsRead,
+              searchResultReadConversionPercent:
+                report.metrics.searchQuality.searchResultReadConversionPercent,
+              searchCoveragePercent:
+                report.metrics.searchQuality.searchCoveragePercent,
+              averageBestRankOfReadFiles:
+                report.metrics.searchQuality.averageBestRankOfReadFiles,
+              top1ReadHitRatePercent:
+                report.metrics.searchQuality.top1ReadHitRatePercent,
+              top3ReadHitRatePercent:
+                report.metrics.searchQuality.top3ReadHitRatePercent,
+              top5ReadHitRatePercent:
+                report.metrics.searchQuality.top5ReadHitRatePercent,
+              repeatedSearchCount:
+                report.metrics.searchQuality.repeatedSearchCount,
+              repeatedSearchPercent:
+                report.metrics.searchQuality.repeatedSearchPercent,
             }
           : undefined,
       })),

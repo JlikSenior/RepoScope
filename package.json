@@ -5,7 +5,8 @@
   "description": "A token-budgeted repository exploration layer for AI coding agents.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck",
+    "test": "tsx --test tests/core.test.ts",
+    "check": "npm run typecheck && npm test",
     "cli": "tsx src/index.ts",
     "mcp": "tsx src/mcp.mts",
     "mcp:test": "tsx src/mcp-test.mts"

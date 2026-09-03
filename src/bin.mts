@@ -4,19 +4,45 @@ import {
   buildCursorMcpSnippet,
   DEFAULT_NPX_SPEC,
   installCursorIntegration,
+  type CursorInstallScope,
 } from "./cursor-setup.mjs";
 
 function printHelp(): void {
-  console.log(`RepoScope\n\nUsage:\n  reposcope                 Start the stdio MCP server\n  reposcope mcp             Start the stdio MCP server\n  reposcope cursor-install  Install Cursor global MCP config and RepoScope skills\n  reposcope cursor-config   Print the Cursor MCP JSON snippet\n  reposcope help            Show this help`);
+  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start the stdio MCP server\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope help                         Show this help`);
+}
+
+function parseCursorInstallArgs(args: string[]): {
+  scope: CursorInstallScope;
+  projectRoot?: string;
+} {
+  if (args.length === 0) {
+    return { scope: "project", projectRoot: process.cwd() };
+  }
+
+  if (args.length === 1 && args[0] === "--global") {
+    return { scope: "global" };
+  }
+
+  if (args.length === 2 && args[0] === "--project") {
+    return { scope: "project", projectRoot: args[1] };
+  }
+
+  throw new Error(
+    "Usage: reposcope cursor-install [--global | --project <directory>]",
+  );
 }
 
 const command = process.argv[2] ?? "mcp";
 
 try {
   if (command === "cursor-install") {
-    const result = await installCursorIntegration();
+    const options = parseCursorInstallArgs(process.argv.slice(3));
+    const result = await installCursorIntegration(options);
 
-    console.log("RepoScope Cursor integration installed.");
+    console.log(`RepoScope Cursor integration installed (${result.scope}).`);
+    if (result.projectRoot) {
+      console.log(`Project: ${result.projectRoot}`);
+    }
     console.log(`MCP config: ${result.mcpConfigPath}`);
     for (const skillPath of result.skillPaths) {
       console.log(`Skill: ${skillPath}`);

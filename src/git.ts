@@ -13,6 +13,7 @@ import type {
 } from "./types";
 
 const encoding = getEncoding("cl100k_base");
+const PROTECTED_PATCH_PATHS = new Set([".reposcope.json"]);
 
 type ProcessResult = {
   stdout: string;
@@ -106,6 +107,10 @@ function validatePatchPath(path: string): string {
 
   if (segments.includes("..") || segments.includes(".git")) {
     throw new Error(`Unsafe patch path: ${normalized}`);
+  }
+
+  if (PROTECTED_PATCH_PATHS.has(normalized)) {
+    throw new Error(`Protected RepoScope policy file: ${normalized}`);
   }
 
   return normalized;

@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
@@ -14,7 +16,7 @@ import {
 
 const MAX_STATUS_LINES = 200;
 
-function createServer() {
+export function createRepoScopeServer(): McpServer {
   const server = new McpServer({
     name: "reposcope",
     version: "0.1.0",
@@ -296,5 +298,11 @@ function createServer() {
   return server;
 }
 
-void serveStdio(createServer);
-console.error("RepoScope MCP server running on stdio");
+const isDirectExecution =
+  Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectExecution) {
+  void serveStdio(createRepoScopeServer);
+  console.error("RepoScope MCP server running on stdio");
+}

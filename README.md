@@ -6,7 +6,7 @@ The core is intentionally AI-provider agnostic: the agent does the reasoning; Re
 
 ## Current status
 
-Early MVP. Read/exploration is stable enough for real repositories, and guarded text-patch writes are available behind a session.
+Early MVP. Read/exploration works on real repositories, guarded text-patch writes are available behind a session, and the same MCP tool surface can be served over stdio or loopback HTTP.
 
 ## Requirements
 
@@ -51,11 +51,31 @@ For agent integrations, prefer MCP. The MCP flow does not need these diagnostic 
 
 ## MCP server
 
-Start the stdio MCP server:
+### stdio
+
+For local MCP hosts that spawn the server process directly:
 
 ```bash
 npm run mcp
 ```
+
+### Loopback HTTP
+
+For remote/tunnel-based MCP hosts, start the Streamable HTTP endpoint:
+
+```bash
+npm run mcp:http
+```
+
+Defaults:
+
+- MCP endpoint: `http://127.0.0.1:8787/mcp`
+- Health endpoint: `http://127.0.0.1:8787/health`
+- Override the port with `REPOSCOPE_PORT=<port>`.
+
+The HTTP server intentionally binds only to `127.0.0.1`; do not expose it directly to the public internet. For ChatGPT on the web, place a trusted secure MCP tunnel in front of this local endpoint.
+
+Both stdio and HTTP use the same MCP server factory, so their tool definitions cannot drift apart.
 
 Current tools:
 
@@ -96,6 +116,7 @@ Write tools deliberately do **not** provide arbitrary filesystem or shell access
 - Patch paths cannot be absolute, escape with `..`, or target `.git`.
 - Binary patches are rejected.
 - `git apply --check` must succeed before the patch is applied.
+- Modified files invalidate their old read state so the agent can reread the new version.
 
 `repo_diff` is output-budgeted so a large working-tree diff cannot unexpectedly consume the agent's context.
 
@@ -118,21 +139,22 @@ RepoScope keeps two different concepts separate:
 
 RepoScope uses `rg --files`, so it respects normal ignore rules such as `.gitignore`. It also excludes common binary/resource formats and files larger than 1 MiB by default. Requested reads must resolve to a file in the scanned repository set, preventing path traversal outside the target repository.
 
-## Development
+## Development and tests
+
+All automated tests live under `tests/` and are executed by the standard project entrypoints:
 
 ```bash
+npm test
+npm run typecheck
 npm run check
 ```
 
-For the current manual MCP end-to-end harness:
+`npm run check` is the CI gate and runs both type checking and the full automated test suite. Production source files under `src/` do not contain ad-hoc `*-test` harnesses.
 
-```bash
-npm run mcp:test
-```
+Current coverage includes repository scanning/search boundaries, task budgets and cross-tool deduplication, guarded patch writes, diff/status behavior, post-write rereads, and the HTTP MCP transport/tool surface.
 
 ## Next milestones
 
-- MCP-specific automated integration coverage
 - Safe allowlisted test/build execution
 - Faster repository/session metadata caching
 - Better search ranking without increasing context size

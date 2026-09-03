@@ -21,7 +21,7 @@ export function buildCursorMcpServer(packageSpec = DEFAULT_NPX_SPEC) {
   return {
     type: "stdio" as const,
     command: "npx",
-    args: ["-y", packageSpec],
+    args: ["-y", "--prefer-online", packageSpec],
   };
 }
 

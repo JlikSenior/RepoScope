@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 
 const MAX_AI_FILE_SIZE_BYTES = 1024 * 1024;
 const STAT_BATCH_SIZE = 128;
+const SCAN_CACHE_TTL_MS = 15_000;
 
 const IGNORED_FILES = new Set([
   OUTPUT_FILES.repoMap,
@@ -53,6 +54,14 @@ export type ScannedFileEntry = {
   estimatedTokens: number;
 };
 
+type ScanCacheEntry = {
+  expiresAt: number;
+  entries: ScannedFileEntry[];
+};
+
+const scanCache = new Map<string, ScanCacheEntry>();
+const scansInFlight = new Map<string, Promise<ScannedFileEntry[]>>();
+
 function passesStaticAiReadableRules(filePath: string): boolean {
   const fileName = basename(filePath);
 
@@ -86,10 +95,9 @@ export async function getScannedFileEntry(
   }
 }
 
-export async function scanDirectoryEntries(
-  directoryPath: string,
+async function performDirectoryScan(
+  targetPath: string,
 ): Promise<ScannedFileEntry[]> {
-  const targetPath = resolve(directoryPath);
   const { stdout } = await execFileAsync(
     "rg",
     ["--files", "--hidden", "-g", "!.git", targetPath],
@@ -115,6 +123,39 @@ export async function scanDirectoryEntries(
   }
 
   return entries;
+}
+
+export function invalidateDirectoryScan(directoryPath: string): void {
+  scanCache.delete(resolve(directoryPath));
+}
+
+export async function scanDirectoryEntries(
+  directoryPath: string,
+): Promise<ScannedFileEntry[]> {
+  const targetPath = resolve(directoryPath);
+  const now = Date.now();
+  const cached = scanCache.get(targetPath);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.entries;
+  }
+
+  const existingScan = scansInFlight.get(targetPath);
+  if (existingScan) return existingScan;
+
+  const scan = performDirectoryScan(targetPath);
+  scansInFlight.set(targetPath, scan);
+
+  try {
+    const entries = await scan;
+    scanCache.set(targetPath, {
+      entries,
+      expiresAt: Date.now() + SCAN_CACHE_TTL_MS,
+    });
+    return entries;
+  } finally {
+    scansInFlight.delete(targetPath);
+  }
 }
 
 export async function scanDirectory(directoryPath: string): Promise<string[]> {

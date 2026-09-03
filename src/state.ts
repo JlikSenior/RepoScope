@@ -10,6 +10,7 @@ export type ProjectStatePaths = {
   projectId: string;
   projectDir: string;
   cliDir: string;
+  sessionsDir: string;
   metadataPath: string;
   contextPacketPath: string;
   repoMapPath: string;
@@ -60,12 +61,14 @@ export async function getProjectStatePaths(
   const projectId = projectIdForPath(canonicalPath);
   const projectDir = join(stateRoot, "projects", projectId);
   const cliDir = join(projectDir, "cli");
+  const sessionsDir = join(projectDir, "sessions");
 
   return {
     stateRoot,
     projectId,
     projectDir,
     cliDir,
+    sessionsDir,
     metadataPath: join(projectDir, "project.json"),
     contextPacketPath: join(cliDir, OUTPUT_FILES.contextPacket),
     repoMapPath: join(cliDir, OUTPUT_FILES.repoMap),
@@ -81,7 +84,10 @@ export async function ensureProjectState(
   const canonicalPath = await realpath(resolve(targetPath));
   const paths = await getProjectStatePaths(canonicalPath, options);
 
-  await mkdir(paths.cliDir, { recursive: true });
+  await Promise.all([
+    mkdir(paths.cliDir, { recursive: true }),
+    mkdir(paths.sessionsDir, { recursive: true }),
+  ]);
   await writeFile(
     paths.metadataPath,
     `${JSON.stringify(

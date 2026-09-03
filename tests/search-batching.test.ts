@@ -53,7 +53,10 @@ test("batched search preserves duplicate-term scoring without duplicate hints", 
 
 test("search terms beyond one process batch keep their scores", async () => {
   const root = await mkdtemp(join(tmpdir(), "reposcope-search-many-"));
-  const terms = Array.from({ length: 33 }, (_, index) => `needle_${index}`);
+  const terms = Array.from(
+    { length: 33 },
+    (_, index) => `needle_${String(index).padStart(2, "0")}_end`,
+  );
 
   try {
     await writeFile(

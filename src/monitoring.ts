@@ -4,6 +4,7 @@ import type {
   LatencyTool,
   MonitoringEvent,
   MonitoringSummary,
+  SearchQualityMetrics,
   SessionFinishReport,
   SessionLatencyMetrics,
   SessionMetrics,
@@ -122,6 +123,104 @@ function summarizeLatency(session: TaskSession): SessionLatencyMetrics | undefin
   };
 }
 
+function canonicalSearchKey(searchTerms: string[]): string {
+  return [...new Set(
+    searchTerms
+      .map((term) => term.trim().toLowerCase())
+      .filter(Boolean),
+  )]
+    .sort()
+    .join("\u0000");
+}
+
+function summarizeSearchQuality(session: TaskSession): SearchQualityMetrics {
+  const uniqueSearchResults = new Set<string>();
+  const uniqueReadFiles = new Set<string>();
+  const bestSearchRankSeen = new Map<string, number>();
+  const firstReadBestRanks = new Map<string, number>();
+  const seenSearchKeys = new Set<string>();
+  let searchCount = 0;
+  let repeatedSearchCount = 0;
+
+  for (const event of session.events) {
+    if (event.type === "search") {
+      searchCount += 1;
+      const searchKey = canonicalSearchKey(event.searchTerms);
+
+      if (searchKey) {
+        if (seenSearchKeys.has(searchKey)) {
+          repeatedSearchCount += 1;
+        } else {
+          seenSearchKeys.add(searchKey);
+        }
+      }
+
+      event.resultFiles.forEach((path, index) => {
+        uniqueSearchResults.add(path);
+        const rank = index + 1;
+        const previousRank = bestSearchRankSeen.get(path);
+
+        if (previousRank === undefined || rank < previousRank) {
+          bestSearchRankSeen.set(path, rank);
+        }
+      });
+      continue;
+    }
+
+    if (event.type !== "read") continue;
+
+    for (const file of event.files) {
+      if (uniqueReadFiles.has(file)) continue;
+
+      uniqueReadFiles.add(file);
+      const rank = bestSearchRankSeen.get(file);
+      if (rank !== undefined) {
+        firstReadBestRanks.set(file, rank);
+      }
+    }
+  }
+
+  const readRanks = [...firstReadBestRanks.values()];
+  const readFilesFoundBySearch = firstReadBestRanks.size;
+  const readFilesNotFoundBySearch = Math.max(
+    uniqueReadFiles.size - readFilesFoundBySearch,
+    0,
+  );
+  const readDenominator = uniqueReadFiles.size;
+  const searchedDenominator = uniqueSearchResults.size;
+  const averageBestRankOfReadFiles =
+    readRanks.length === 0
+      ? 0
+      : round(readRanks.reduce((sum, rank) => sum + rank, 0) / readRanks.length);
+  const hitRate = (limit: number) =>
+    readDenominator === 0
+      ? 0
+      : round((readRanks.filter((rank) => rank <= limit).length / readDenominator) * 100);
+
+  return {
+    uniqueSearchResults: uniqueSearchResults.size,
+    uniqueSearchResultsRead: readFilesFoundBySearch,
+    searchResultReadConversionPercent:
+      searchedDenominator === 0
+        ? 0
+        : round((readFilesFoundBySearch / searchedDenominator) * 100),
+    uniqueFilesRead: uniqueReadFiles.size,
+    readFilesFoundBySearch,
+    readFilesNotFoundBySearch,
+    searchCoveragePercent:
+      readDenominator === 0
+        ? 0
+        : round((readFilesFoundBySearch / readDenominator) * 100),
+    averageBestRankOfReadFiles,
+    top1ReadHitRatePercent: hitRate(1),
+    top3ReadHitRatePercent: hitRate(3),
+    top5ReadHitRatePercent: hitRate(5),
+    repeatedSearchCount,
+    repeatedSearchPercent:
+      searchCount === 0 ? 0 : round((repeatedSearchCount / searchCount) * 100),
+  };
+}
+
 export function summarizeSession(session: TaskSession): SessionMetrics {
   let searchCount = 0;
   let readCount = 0;
@@ -210,6 +309,7 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
     toolOverheadTokens,
     toolOverheadPercent: Number(toolOverheadPercent.toFixed(2)),
     latency: summarizeLatency(session),
+    searchQuality: summarizeSearchQuality(session),
   };
 }
 

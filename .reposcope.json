@@ -1,0 +1,7 @@
+{
+  "commands": {
+    "test": ["npm", "test"],
+    "check": ["npm", "run", "check"],
+    "typecheck": ["npm", "run", "typecheck"]
+  }
+}

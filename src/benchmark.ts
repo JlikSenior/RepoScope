@@ -20,6 +20,7 @@ export type BenchmarkRun = {
   agent: string;
   repository: string;
   commit?: string;
+  trial?: string;
   outcome: BenchmarkOutcome;
   verification: BenchmarkVerification;
   metrics: BenchmarkMetrics;
@@ -214,6 +215,7 @@ function parseRun(value: unknown, lineNumber: number): BenchmarkRun {
     agent: requireString(input, "agent", lineNumber),
     repository: requireString(input, "repository", lineNumber),
     commit: optionalString(input, "commit", lineNumber),
+    trial: optionalString(input, "trial", lineNumber),
     outcome,
     verification,
     metrics: parseMetrics(input.metrics, lineNumber),
@@ -284,7 +286,13 @@ function summarizeMode(runs: BenchmarkRun[]): ModeBenchmarkSummary {
 }
 
 function pairKey(run: BenchmarkRun): string {
-  return `${run.repository}\u0000${run.taskId}\u0000${run.agent}`;
+  return [
+    run.repository,
+    run.commit ?? "",
+    run.taskId,
+    run.agent,
+    run.trial ?? "",
+  ].join("\u0000");
 }
 
 function reductionPercent(baseline: number, reposcope: number): number | undefined {

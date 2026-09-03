@@ -1,12 +1,15 @@
 import { appendFile, readFile } from "node:fs/promises";
 
 import type {
+  LatencyTool,
   MonitoringEvent,
   MonitoringSummary,
   SessionFinishReport,
+  SessionLatencyMetrics,
   SessionMetrics,
   SessionVerificationStatus,
   TaskSession,
+  ToolLatencyAggregate,
 } from "./types";
 
 export async function readMonitoringEvents(
@@ -54,6 +57,68 @@ export function summarizeMonitoring(
     selectedContextTokens,
     savedTokens,
     reductionPercent: Number(reductionPercent.toFixed(2)),
+  };
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function aggregateLatency(values: Array<{ durationMs: number; failed: boolean }>): ToolLatencyAggregate {
+  const totalMs = values.reduce((sum, value) => sum + value.durationMs, 0);
+
+  return {
+    count: values.length,
+    failedCount: values.filter((value) => value.failed).length,
+    totalMs: round(totalMs),
+    averageMs: values.length === 0 ? 0 : round(totalMs / values.length),
+    maxMs: values.length === 0 ? 0 : round(Math.max(...values.map((value) => value.durationMs))),
+  };
+}
+
+function summarizeLatency(session: TaskSession): SessionLatencyMetrics | undefined {
+  const events = session.events.filter(
+    (event): event is Extract<TaskSession["events"][number], { type: "latency" }> =>
+      event.type === "latency",
+  );
+
+  if (events.length === 0) return undefined;
+
+  const byTool = (tool: LatencyTool) =>
+    events
+      .filter((event) => event.tool === tool)
+      .map((event) => ({ durationMs: event.durationMs, failed: event.failed }));
+  const scanCalls = events.reduce((sum, event) => sum + event.scan.calls, 0);
+  const scanCacheHits = events.reduce((sum, event) => sum + event.scan.cacheHits, 0);
+  const scanCacheMisses = events.reduce((sum, event) => sum + event.scan.cacheMisses, 0);
+  const scanInFlightHits = events.reduce((sum, event) => sum + event.scan.inFlightHits, 0);
+  const scanTotalMs = events.reduce((sum, event) => sum + event.scan.totalMs, 0);
+  const scanMaxMs = events.reduce((max, event) => Math.max(max, event.scan.maxMs), 0);
+  const searchRgRuns = events.reduce((sum, event) => sum + event.searchRg.runs, 0);
+  const searchRgTotalMs = events.reduce((sum, event) => sum + event.searchRg.totalMs, 0);
+  const searchRgMaxMs = events.reduce((max, event) => Math.max(max, event.searchRg.maxMs), 0);
+
+  return {
+    repoSessionStart: aggregateLatency(byTool("repo_session_start")),
+    repoSearch: aggregateLatency(byTool("repo_search")),
+    repoRead: aggregateLatency(byTool("repo_read")),
+    repoContext: aggregateLatency(byTool("repo_context")),
+    scan: {
+      calls: scanCalls,
+      cacheHits: scanCacheHits,
+      cacheMisses: scanCacheMisses,
+      inFlightHits: scanInFlightHits,
+      cacheHitPercent: scanCalls === 0 ? 0 : round((scanCacheHits / scanCalls) * 100),
+      totalMs: round(scanTotalMs),
+      averageMs: scanCalls === 0 ? 0 : round(scanTotalMs / scanCalls),
+      maxMs: round(scanMaxMs),
+    },
+    searchRg: {
+      runs: searchRgRuns,
+      totalMs: round(searchRgTotalMs),
+      averageRunMs: searchRgRuns === 0 ? 0 : round(searchRgTotalMs / searchRgRuns),
+      maxMs: round(searchRgMaxMs),
+    },
   };
 }
 
@@ -144,6 +209,7 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
     utilizationPercent: Number(utilizationPercent.toFixed(2)),
     toolOverheadTokens,
     toolOverheadPercent: Number(toolOverheadPercent.toFixed(2)),
+    latency: summarizeLatency(session),
   };
 }
 

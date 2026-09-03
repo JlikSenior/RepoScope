@@ -37,7 +37,7 @@ async function createFixture(): Promise<string> {
     join(root, ".reposcope.json"),
     JSON.stringify({
       commands: {
-        verify: [process.execPath, "-e", "process.exit(0)"],
+        verify: ["node", "-e", "process.exit(0)"],
       },
     }),
   );

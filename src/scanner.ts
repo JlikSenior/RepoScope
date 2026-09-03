@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 
 import { OUTPUT_FILES } from "./output";
+import { recordScanPerformance } from "./performance";
 
 const execFileAsync = promisify(execFile);
 
@@ -132,16 +134,24 @@ export function invalidateDirectoryScan(directoryPath: string): void {
 export async function scanDirectoryEntries(
   directoryPath: string,
 ): Promise<ScannedFileEntry[]> {
+  const startedAt = performance.now();
   const targetPath = resolve(directoryPath);
   const now = Date.now();
   const cached = scanCache.get(targetPath);
 
   if (cached && cached.expiresAt > now) {
+    recordScanPerformance("hit", performance.now() - startedAt);
     return cached.entries;
   }
 
   const existingScan = scansInFlight.get(targetPath);
-  if (existingScan) return existingScan;
+  if (existingScan) {
+    try {
+      return await existingScan;
+    } finally {
+      recordScanPerformance("in_flight", performance.now() - startedAt);
+    }
+  }
 
   const scan = performDirectoryScan(targetPath);
   scansInFlight.set(targetPath, scan);
@@ -155,6 +165,7 @@ export async function scanDirectoryEntries(
     return entries;
   } finally {
     scansInFlight.delete(targetPath);
+    recordScanPerformance("miss", performance.now() - startedAt);
   }
 }
 

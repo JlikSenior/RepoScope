@@ -10,22 +10,24 @@ The product hypothesis is simple:
 
 ## Quick start with Cursor
 
-RepoScope can be installed without a machine-specific checkout path:
+During testing, install RepoScope only in the project where you want to evaluate it. Run this from that project root:
 
 ```bash
 npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install
 ```
 
-This one-time command:
+By default this command is **project-scoped**. It:
 
-- adds a global Cursor stdio MCP entry that itself launches RepoScope through `npx`,
-- installs the global `reposcope` Agent Skill,
-- installs the explicit `reposcope-benchmark` Skill for controlled experiments,
-- preserves existing Cursor MCP servers.
+- adds RepoScope to `<project>/.cursor/mcp.json`,
+- installs `reposcope` and `reposcope-benchmark` under `<project>/.cursor/skills/`,
+- preserves existing project MCP servers,
+- does not modify your global Cursor configuration.
 
 After installation, restart Cursor or reload MCPs. The configured MCP command follows the GitHub `main` branch and uses npm's fresh-cache check, so RepoScope updates do not require changing a local project path.
 
 The repository is currently private, so the machine running Cursor must already have GitHub Git access configured.
+
+Global installation remains available explicitly with `cursor-install --global`, but project scope is the recommended mode while RepoScope is being tested.
 
 See [`docs/cursor.md`](docs/cursor.md) for details.
 
@@ -99,9 +101,11 @@ The Agent should not request the whole repository by default.
 
 ## Multi-project state isolation
 
-RepoScope may be installed globally and used across many repositories, but project state is **not global**.
+Cursor exposure scope and RepoScope runtime-state scope are separate concerns.
 
-Each repository is canonicalized with `realpath` and assigned a stable id derived from the canonical path. RepoScope-owned diagnostic/state files live outside the target repository under a per-project directory:
+During testing, each project can have its own `.cursor/mcp.json` and `.cursor/skills/`, so RepoScope is only exposed in the workspaces where it was installed.
+
+RepoScope runtime state is isolated independently. Each repository is canonicalized with `realpath` and assigned a stable id derived from the canonical path. RepoScope-owned diagnostic/state files live outside the target repository under a per-project directory:
 
 ```text
 <RepoScope state root>/
@@ -136,7 +140,7 @@ RepoScope ships two portable Skills:
 - `skills/reposcope/SKILL.md` — normal coding workflow. It makes RepoScope the repository search/read/context gateway while leaving reasoning and editing to the Agent.
 - `skills/reposcope-benchmark/SKILL.md` — explicit benchmark mode with stricter no-fallback rules.
 
-`cursor-install` copies both into `~/.agents/skills/`, which Cursor discovers globally.
+Project-scoped `cursor-install` copies both into `<project>/.cursor/skills/`, which Cursor discovers only for that project. Explicit `cursor-install --global` keeps the previous user-level behavior.
 
 ## Integration utilities
 

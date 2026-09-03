@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { scanDirectory } from "./scanner";
 import type {
   SessionEvent,
+  SessionOutcome,
   StartSessionRequest,
   StartSessionResult,
   TaskSession,
@@ -35,6 +36,7 @@ export async function startSession(
     id,
     targetPath,
     task: request.task,
+    status: "active",
     budgetTokens: request.budgetTokens,
     usedTokens: 0,
     deliveredTokens: 0,
@@ -60,16 +62,48 @@ export function getSession(sessionId: string): TaskSession | undefined {
   return sessions.get(sessionId);
 }
 
-export function recordSessionEvent(
-  sessionId: string,
-  event: SessionEvent,
-): void {
+export function getActiveSession(sessionId: string): TaskSession {
   const session = sessions.get(sessionId);
 
   if (!session) {
     throw new Error("Session not found");
   }
 
+  if (session.status !== "active") {
+    throw new Error("Session is finished");
+  }
+
+  return session;
+}
+
+export function finishSession(
+  sessionId: string,
+  outcome: SessionOutcome,
+  note?: string,
+): TaskSession {
+  const session = getActiveSession(sessionId);
+  const finishedAt = new Date().toISOString();
+  const normalizedNote = note?.trim() || undefined;
+
+  session.status = "finished";
+  session.outcome = outcome;
+  session.note = normalizedNote;
+  session.finishedAt = finishedAt;
+  session.events.push({
+    type: "finish",
+    timestamp: finishedAt,
+    outcome,
+    note: normalizedNote,
+  });
+
+  return session;
+}
+
+export function recordSessionEvent(
+  sessionId: string,
+  event: SessionEvent,
+): void {
+  const session = getActiveSession(sessionId);
   session.events.push(event);
 }
 
@@ -90,12 +124,7 @@ export function recordDeliveredTokens(
 }
 
 export function hasReadFile(sessionId: string, filePath: string): boolean {
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    throw new Error("Session not found");
-  }
-
+  const session = getActiveSession(sessionId);
   return filePath in session.readFiles;
 }
 
@@ -104,12 +133,7 @@ export function recordReadFile(
   filePath: string,
   tokens: number,
 ): void {
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    throw new Error("Session not found");
-  }
-
+  const session = getActiveSession(sessionId);
   session.readFiles[filePath] = tokens;
 }
 
@@ -117,11 +141,7 @@ export function invalidateReadFiles(
   sessionId: string,
   files: string[],
 ): void {
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    throw new Error("Session not found");
-  }
+  const session = getActiveSession(sessionId);
 
   for (const file of files) {
     delete session.readFiles[file];
@@ -129,12 +149,7 @@ export function invalidateReadFiles(
 }
 
 export function consumeTokens(sessionId: string, tokens: number) {
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    throw new Error("Session not found");
-  }
-
+  const session = getActiveSession(sessionId);
   const remainingTokens = session.budgetTokens - session.usedTokens;
 
   if (tokens > remainingTokens) {

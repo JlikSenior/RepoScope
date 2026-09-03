@@ -6,10 +6,11 @@ import {
   installCursorIntegration,
   type CursorInstallScope,
 } from "./cursor-setup.mjs";
+import { buildRepoStats } from "./repo-stats.mjs";
 import { buildProjectSessionHistoryReport } from "./session-history.mjs";
 
 function printHelp(): void {
-  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start the stdio MCP server\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope help                         Show this help`);
+  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start the stdio MCP server\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
 }
 
 function parseCursorInstallArgs(args: string[]): {
@@ -33,10 +34,10 @@ function parseCursorInstallArgs(args: string[]): {
   );
 }
 
-function parseProjectArg(args: string[]): string {
+function parseProjectArg(args: string[], command: string): string {
   if (args.length === 0) return process.cwd();
   if (args.length === 2 && args[0] === "--project") return args[1];
-  throw new Error("Usage: reposcope project-report [--project <directory>]");
+  throw new Error(`Usage: reposcope ${command} [--project <directory>]`);
 }
 
 const command = process.argv[2] ?? "mcp";
@@ -62,8 +63,12 @@ try {
   } else if (command === "cursor-config") {
     console.log(JSON.stringify(buildCursorMcpSnippet(DEFAULT_NPX_SPEC), null, 2));
   } else if (command === "project-report") {
-    const projectRoot = parseProjectArg(process.argv.slice(3));
+    const projectRoot = parseProjectArg(process.argv.slice(3), command);
     const report = await buildProjectSessionHistoryReport(projectRoot);
+    console.log(JSON.stringify(report, null, 2));
+  } else if (command === "repo-stats") {
+    const projectRoot = parseProjectArg(process.argv.slice(3), command);
+    const report = await buildRepoStats(projectRoot);
     console.log(JSON.stringify(report, null, 2));
   } else if (command === "help" || command === "--help" || command === "-h") {
     printHelp();

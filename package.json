@@ -5,10 +5,11 @@
   "description": "A token-budgeted repository exploration layer for AI coding agents.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test tests/*.test.ts tests/*.test.mts",
     "check": "npm run typecheck && npm test",
     "cli": "tsx src/index.ts",
     "mcp": "tsx src/mcp.mts",
+    "mcp:http": "tsx src/mcp-http.mts",
     "mcp:test": "tsx src/mcp-test.mts"
   },
   "engines": {
@@ -30,6 +31,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "js-tiktoken": "^1.0.21",
     "zod": "^4.5.4"

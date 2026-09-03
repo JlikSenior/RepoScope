@@ -90,10 +90,10 @@ import { searchRepo } from "./src/core.ts";
 const fixture = await mkdtemp(join(tmpdir(), "reposcope-pilot-search-"));
 try {
   for (let i = 0; i < 30; i += 1) {
-    await writeFile(join(fixture, `file-\${i}.ts`), `export const common\${i} = "common-term";\\n`);
+    await writeFile(join(fixture, "file-" + i + ".ts"), "export const common" + i + " = \\\"common-term\\\";\\n");
   }
   const result = await searchRepo({ targetPath: fixture, searchTerms: ["common-term"], limit: 5 });
-  assert(result.results.length <= 5, `expected <= 5 results, got \${result.results.length}`);
+  assert(result.results.length <= 5, "expected <= 5 results, got " + result.results.length);
 } finally {
   await rm(fixture, { recursive: true, force: true });
 }
@@ -105,7 +105,10 @@ async function verifyMcpTypecheckCoverage() {
   const config = JSON.parse(stdout);
   const files = Array.isArray(config.files) ? config.files : [];
   assert(
-    files.some((file) => String(file).replaceAll("\\\\", "/").endsWith("/src/mcp.mts") || String(file).replaceAll("\\\\", "/") === "./src/mcp.mts"),
+    files.some((file) => {
+      const normalized = String(file).replaceAll("\\\\", "/");
+      return normalized.endsWith("/src/mcp.mts") || normalized === "./src/mcp.mts";
+    }),
     "TypeScript config does not include src/mcp.mts",
   );
 }

@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
+
+import { recordSearchRgPerformance } from "./performance";
 
 const execFileAsync = promisify(execFile);
 const MAX_MATCHES_PER_FILE = 5;
@@ -78,6 +81,7 @@ export async function searchFiles(
 
   for (const keywordBatch of chunk(indexedKeywords, MAX_PATTERNS_PER_PROCESS)) {
     let stdout: string;
+    const rgStartedAt = performance.now();
 
     try {
       const result = await execFileAsync(
@@ -94,6 +98,8 @@ export async function searchFiles(
         continue;
       }
       throw error;
+    } finally {
+      recordSearchRgPerformance(performance.now() - rgStartedAt);
     }
 
     for (const rawLine of stdout.split("\n")) {

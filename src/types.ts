@@ -186,6 +186,43 @@ export type RepoRunResult = {
 export type SessionOutcome = "success" | "failed" | "abandoned";
 export type SessionVerificationStatus = "passed" | "failed" | "not_run";
 
+export type LatencyTool =
+  | "repo_session_start"
+  | "repo_search"
+  | "repo_read"
+  | "repo_context";
+
+export type ToolLatencyAggregate = {
+  count: number;
+  failedCount: number;
+  totalMs: number;
+  averageMs: number;
+  maxMs: number;
+};
+
+export type SessionLatencyMetrics = {
+  repoSessionStart: ToolLatencyAggregate;
+  repoSearch: ToolLatencyAggregate;
+  repoRead: ToolLatencyAggregate;
+  repoContext: ToolLatencyAggregate;
+  scan: {
+    calls: number;
+    cacheHits: number;
+    cacheMisses: number;
+    inFlightHits: number;
+    cacheHitPercent: number;
+    totalMs: number;
+    averageMs: number;
+    maxMs: number;
+  };
+  searchRg: {
+    runs: number;
+    totalMs: number;
+    averageRunMs: number;
+    maxMs: number;
+  };
+};
+
 export type TaskSession = {
   id: string;
   targetPath: string;
@@ -259,6 +296,26 @@ export type SessionEvent =
       action: "read" | "context";
       files: string[];
       reason: "context_budget_exceeded" | "already_read";
+    }
+  | {
+      type: "latency";
+      timestamp: string;
+      tool: LatencyTool;
+      durationMs: number;
+      failed: boolean;
+      scan: {
+        calls: number;
+        cacheHits: number;
+        cacheMisses: number;
+        inFlightHits: number;
+        totalMs: number;
+        maxMs: number;
+      };
+      searchRg: {
+        runs: number;
+        totalMs: number;
+        maxMs: number;
+      };
     };
 
 export type SessionMetrics = {
@@ -285,6 +342,7 @@ export type SessionMetrics = {
   uniqueFilesRead: number;
   sourceLinesRead: number;
   utilizationPercent: number;
+  latency?: SessionLatencyMetrics;
 };
 
 export type SessionFinishReport = {

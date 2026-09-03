@@ -151,6 +151,8 @@ A/B pairing is strict: `repository + commit + taskId + agent + trial` must match
 
 See [`docs/benchmark.md`](docs/benchmark.md) for the schema and experimental protocol.
 
+The first executable pilot lives in [`benchmarks/pilot/`](benchmarks/pilot/README.md). It replays five real problems from the original RepoScope prototype against a fixed historical commit, with independent external verifiers and a strict baseline-vs-RepoScope procedure.
+
 ## Safe write policy
 
 `repo_apply_patch` deliberately does not provide arbitrary filesystem access:
@@ -202,7 +204,7 @@ Run the full validation suite:
 npm run check
 ```
 
-All automated tests live under `tests/`. The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, and a real end-to-end **stdio MCP** lifecycle test.
+All automated tests live under `tests/`. The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, Pilot manifest/verifier checks, and a real end-to-end **stdio MCP** lifecycle test.
 
 ## Current development priority
 

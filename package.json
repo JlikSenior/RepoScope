@@ -6,8 +6,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts tests/*.test.mts",
-    "check": "npm run typecheck && npm test",
+    "benchmark:pilot:check": "node --check benchmarks/pilot/verify.mjs",
+    "check": "npm run typecheck && npm test && npm run benchmark:pilot:check",
     "benchmark:report": "tsx src/benchmark-report.ts",
+    "benchmark:pilot:verify": "node benchmarks/pilot/verify.mjs",
     "cli": "tsx src/index.ts",
     "mcp": "tsx src/mcp.mts"
   },

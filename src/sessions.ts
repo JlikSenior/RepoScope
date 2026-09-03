@@ -158,7 +158,7 @@ export function recordDeliveredTokens(
 
 export function hasReadFile(sessionId: string, filePath: string): boolean {
   const session = getActiveSession(sessionId);
-  return Boolean(session.fullyReadFiles[filePath]);
+  return filePath in session.readFiles;
 }
 
 export function getReadRanges(

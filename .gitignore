@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+
+# RepoScope diagnostic outputs
+context-packet.md
+repo-map.json
+monitoring-log.jsonl
+monitoring-summary.json
+
+# Local/editor noise
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example

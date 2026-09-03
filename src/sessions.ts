@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { readFile } from "node:fs/promises";
-import { getEncoding } from "js-tiktoken";
 
 import { scanDirectory } from "./scanner";
-const encoding = getEncoding("cl100k_base");
-
 import type {
   SessionEvent,
   StartSessionRequest,
@@ -15,39 +12,37 @@ import type {
 
 const sessions = new Map<string, TaskSession>();
 
+async function estimateWholeRepoTokens(files: string[]): Promise<number> {
+  const sizes = await Promise.all(
+    files.map(async (file) => {
+      const fileStat = await stat(file);
+      return Math.ceil(fileStat.size / 4);
+    }),
+  );
+
+  return sizes.reduce((sum, tokens) => sum + tokens, 0);
+}
+
 export async function startSession(
   request: StartSessionRequest,
 ): Promise<StartSessionResult> {
   const id = randomUUID();
-
   const targetPath = resolve(request.targetPath);
-
   const files = await scanDirectory(targetPath);
-
-  let wholeRepoTokens = 0;
-
-  for (const file of files) {
-    const content = await readFile(file, "utf8");
-
-    wholeRepoTokens += encoding.encode(content).length;
-  }
+  const wholeRepoTokens = await estimateWholeRepoTokens(files);
 
   const session: TaskSession = {
     id,
     targetPath,
     task: request.task,
-
     budgetTokens: request.budgetTokens,
     usedTokens: 0,
     deliveredTokens: 0,
     deliveredByTool: {},
     wholeRepoTokens,
-
     readFiles: {},
     events: [],
-
     createdAt: new Date().toISOString(),
-
   };
 
   sessions.set(id, session);
@@ -90,7 +85,6 @@ export function recordDeliveredTokens(
   }
 
   session.deliveredTokens += tokens;
-
   session.deliveredByTool[tool] =
     (session.deliveredByTool[tool] ?? 0) + tokens;
 }

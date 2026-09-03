@@ -1,22 +1,9 @@
 import { readFile, stat } from "node:fs/promises";
-import { resolve, relative } from "node:path";
+import { relative, resolve } from "node:path";
 import { getEncoding } from "js-tiktoken";
 
 import { scanDirectory } from "./scanner";
 import { searchFiles } from "./search";
-import type {
-  ContextRequest,
-  ContextResult,
-  FileEntry,
-  SelectedFile,
-  SkippedFile,
-  MonitoringEvent,
-  RepoMap,
-  RepoSearchRequest,
-  RepoSearchResult,
-  RepoReadRequest,
-  RepoReadResult,
-} from "./types";
 import {
   consumeTokens,
   getSession,
@@ -24,7 +11,25 @@ import {
   recordReadFile,
   recordSessionEvent,
 } from "./sessions";
+import type {
+  ContextRequest,
+  ContextResult,
+  FileEntry,
+  MonitoringEvent,
+  RepoMap,
+  RepoReadFile,
+  RepoReadRequest,
+  RepoReadResult,
+  RepoSearchRequest,
+  RepoSearchResult,
+  SelectedFile,
+  SkippedFile,
+} from "./types";
+
 const encoding = getEncoding("cl100k_base");
+const MAX_CONTEXT_CANDIDATES = 50;
+const DEFAULT_SEARCH_LIMIT = 20;
+const MAX_SEARCH_LIMIT = 100;
 
 function buildContextPacket(
   task: string,
@@ -46,30 +51,42 @@ function buildContextPacket(
   ].join("\n\n");
 }
 
+function validateSessionForRepo(
+  sessionId: string | undefined,
+  targetPath: string,
+): void {
+  if (!sessionId) {
+    return;
+  }
+
+  const session = getSession(sessionId);
+
+  if (!session) {
+    throw new Error("Session not found");
+  }
+
+  if (session.targetPath !== targetPath) {
+    throw new Error("Session does not belong to this repository");
+  }
+}
+
+function normalizeSearchLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) {
+    return DEFAULT_SEARCH_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.floor(limit), 1), MAX_SEARCH_LIMIT);
+}
+
 export async function searchRepo(
   request: RepoSearchRequest,
 ): Promise<RepoSearchResult> {
   const targetPath = resolve(request.targetPath);
-
-  const session = request.sessionId ? getSession(request.sessionId) : undefined;
-
-  if (request.sessionId && !session) {
-    throw new Error("Session not found");
-  }
-
-  if (session && session.targetPath !== targetPath) {
-    throw new Error("Session does not belong to this repository");
-  }
-
-  console.error("1. Scanning repository...");
-
-  const files = await scanDirectory(targetPath);
-
-  console.error(`2. Scan complete: ${files.length} files`);
+  validateSessionForRepo(request.sessionId, targetPath);
 
   const searchResults = await searchFiles(targetPath, request.searchTerms);
-
-  const results = searchResults.map((result) => ({
+  const limit = normalizeSearchLimit(request.limit);
+  const results = searchResults.slice(0, limit).map((result) => ({
     path: relative(targetPath, result.path),
     score: result.score,
   }));
@@ -93,21 +110,11 @@ export async function readRepo(
   request: RepoReadRequest,
 ): Promise<RepoReadResult> {
   const targetPath = resolve(request.targetPath);
-
-  const session = request.sessionId ? getSession(request.sessionId) : undefined;
-
-  if (request.sessionId && !session) {
-    throw new Error("Session not found");
-  }
-
-  if (session && session.targetPath !== targetPath) {
-    throw new Error("Session does not belong to this repository");
-  }
+  validateSessionForRepo(request.sessionId, targetPath);
 
   const repoFiles = await scanDirectory(targetPath);
   const validFiles = new Set(repoFiles);
-
-  const selectedFiles = [];
+  const selectedFiles: RepoReadFile[] = [];
   const skippedFiles: SkippedFile[] = [];
 
   let selectedTokens = 0;
@@ -119,9 +126,11 @@ export async function readRepo(
       continue;
     }
 
-    if (request.sessionId && hasReadFile(request.sessionId, requestedFile)) {
+    const relativePath = relative(targetPath, fullPath);
+
+    if (request.sessionId && hasReadFile(request.sessionId, relativePath)) {
       skippedFiles.push({
-        path: requestedFile,
+        path: relativePath,
         reason: "already_read",
         candidateTokens: 0,
       });
@@ -130,7 +139,7 @@ export async function readRepo(
         type: "blocked",
         timestamp: new Date().toISOString(),
         action: "read",
-        files: [requestedFile],
+        files: [relativePath],
         reason: "already_read",
       });
 
@@ -138,15 +147,24 @@ export async function readRepo(
     }
 
     const content = await readFile(fullPath, "utf8");
-
     const tokens = encoding.encode(content).length;
 
     if (selectedTokens + tokens > request.budgetTokens) {
       skippedFiles.push({
-        path: requestedFile,
+        path: relativePath,
         reason: "context_budget_exceeded",
         candidateTokens: selectedTokens + tokens,
       });
+
+      if (request.sessionId) {
+        recordSessionEvent(request.sessionId, {
+          type: "blocked",
+          timestamp: new Date().toISOString(),
+          action: "read",
+          files: [relativePath],
+          reason: "context_budget_exceeded",
+        });
+      }
 
       continue;
     }
@@ -156,7 +174,7 @@ export async function readRepo(
 
       if (!consumption.accepted) {
         skippedFiles.push({
-          path: requestedFile,
+          path: relativePath,
           reason: "context_budget_exceeded",
           candidateTokens: consumption.usedTokens + tokens,
         });
@@ -165,7 +183,7 @@ export async function readRepo(
           type: "blocked",
           timestamp: new Date().toISOString(),
           action: "read",
-          files: [requestedFile],
+          files: [relativePath],
           reason: "context_budget_exceeded",
         });
 
@@ -174,18 +192,17 @@ export async function readRepo(
     }
 
     selectedFiles.push({
-      path: relative(targetPath, fullPath),
+      path: relativePath,
       content,
       tokens,
     });
 
     if (request.sessionId) {
-      recordReadFile(request.sessionId, requestedFile, tokens);
-
+      recordReadFile(request.sessionId, relativePath, tokens);
       recordSessionEvent(request.sessionId, {
         type: "read",
         timestamp: new Date().toISOString(),
-        files: [requestedFile],
+        files: [relativePath],
         tokens,
       });
     }
@@ -203,7 +220,6 @@ export async function readRepo(
     skippedFiles,
     selectedTokens,
     budgetTokens: request.budgetTokens,
-
     session: updatedSession
       ? {
           sessionId: updatedSession.id,
@@ -219,21 +235,9 @@ export async function buildContext(
   request: ContextRequest,
 ): Promise<ContextResult> {
   const targetPath = resolve(request.targetPath);
-
-  const session = request.sessionId ? getSession(request.sessionId) : undefined;
-
-  if (request.sessionId && !session) {
-    throw new Error("Session not found");
-  }
-
-  if (session && session.targetPath !== targetPath) {
-    throw new Error("Session does not belong to this repository");
-  }
+  validateSessionForRepo(request.sessionId, targetPath);
 
   const files = await scanDirectory(targetPath);
-
-  console.error("3. Reading and tokenizing files...");
-
   const fileEntries: FileEntry[] = await Promise.all(
     files.map(async (file) => {
       const fileStat = await stat(file);
@@ -241,25 +245,21 @@ export async function buildContext(
       return {
         path: relative(targetPath, file),
         sizeBytes: fileStat.size,
-
-        // 整仓只做快速估算，不读取文件内容
         estimatedTokens: Math.ceil(fileStat.size / 4),
       };
     }),
   );
-  console.error("4. File tokenization complete");
-
-  console.error("5. Building whole-repo baseline...");
 
   const totalBytes = fileEntries.reduce((sum, file) => sum + file.sizeBytes, 0);
-
   const estimatedTokens = fileEntries.reduce(
     (sum, file) => sum + file.estimatedTokens,
     0,
   );
   const wholeRepoTokens = estimatedTokens;
-
   const validFilePaths = new Set(files);
+  const fileEntryByPath = new Map(
+    fileEntries.map((file) => [file.path, file] as const),
+  );
 
   const hintedResults =
     request.fileHints
@@ -270,30 +270,22 @@ export async function buildContext(
       .filter((result) => validFilePaths.has(result.path)) ?? [];
 
   const selectionSource = hintedResults.length > 0 ? "file_hints" : "search";
-  console.error("7. Searching repository...");
   const searchResults =
     hintedResults.length > 0
       ? hintedResults
       : await searchFiles(targetPath, request.searchTerms);
-  console.error("8. Search complete");
+
   const selectedFiles: SelectedFile[] = [];
   const skippedFiles: SkippedFile[] = [];
-
   const selectedContextFiles: {
     path: string;
     content: string;
+    sourceTokens: number;
   }[] = [];
 
-  console.error("9. Building selected context...");
-
-  const contextCandidates = searchResults.slice(0, 50);
-  console.error(
-    `Search returned ${searchResults.length} results; checking top ${contextCandidates.length}`,
-  );
-  for (const result of contextCandidates) {
+  for (const result of searchResults.slice(0, MAX_CONTEXT_CANDIDATES)) {
     const relativePath = relative(targetPath, result.path);
-
-    const fileEntry = fileEntries.find((file) => file.path === relativePath);
+    const fileEntry = fileEntryByPath.get(relativePath);
 
     if (!fileEntry) {
       continue;
@@ -318,12 +310,13 @@ export async function buildContext(
     }
 
     const content = await readFile(result.path, "utf8");
-
+    const sourceTokens = encoding.encode(content).length;
     const candidateFiles = [
       ...selectedContextFiles,
       {
         path: relativePath,
         content,
+        sourceTokens,
       },
     ];
 
@@ -332,7 +325,6 @@ export async function buildContext(
       request.budgetTokens,
       candidateFiles,
     );
-
     const candidateTokens = encoding.encode(candidatePacket).length;
 
     if (candidateTokens > request.budgetTokens) {
@@ -341,15 +333,14 @@ export async function buildContext(
         reason: "context_budget_exceeded",
         candidateTokens,
       });
-
       continue;
     }
 
     selectedContextFiles.push({
       path: relativePath,
       content,
+      sourceTokens,
     });
-
     selectedFiles.push({
       ...fileEntry,
       score: result.score,
@@ -361,16 +352,13 @@ export async function buildContext(
     request.budgetTokens,
     selectedContextFiles,
   );
-
   const selectedTokens = encoding.encode(contextPacket).length;
-  console.error("10. Selected context ready");
-
-  const selectedSourceTokens = selectedFiles.reduce(
-    (sum, file) => sum + file.estimatedTokens,
+  const selectedSourceTokens = selectedContextFiles.reduce(
+    (sum, file) => sum + file.sourceTokens,
     0,
   );
 
-  if (request.sessionId && selectedFiles.length > 0) {
+  if (request.sessionId && selectedContextFiles.length > 0) {
     const consumption = consumeTokens(request.sessionId, selectedSourceTokens);
 
     if (!consumption.accepted) {
@@ -386,7 +374,18 @@ export async function buildContext(
         `Session token budget exceeded. Remaining: ${consumption.remainingTokens}, required: ${selectedSourceTokens}`,
       );
     }
+
+    for (const file of selectedContextFiles) {
+      recordReadFile(request.sessionId, file.path, file.sourceTokens);
+      recordSessionEvent(request.sessionId, {
+        type: "read",
+        timestamp: new Date().toISOString(),
+        files: [file.path],
+        tokens: file.sourceTokens,
+      });
+    }
   }
+
   const savedTokens = wholeRepoTokens - selectedTokens;
   const reductionPercent =
     wholeRepoTokens === 0 ? 0 : (savedTokens / wholeRepoTokens) * 100;
@@ -409,30 +408,24 @@ export async function buildContext(
       totalBytes,
       estimatedTokens,
     },
-
     monitoring: {
       wholeRepoTokens,
       budgetTokens: request.budgetTokens,
       selectionSource,
-
       query: {
         task: request.task,
         searchTerms: request.searchTerms,
       },
-
       searchResults: searchResults.map((result) => ({
         path: relative(targetPath, result.path),
         score: result.score,
       })),
-
       selectedFiles: selectedFiles.map((file) => file.path),
       skippedFiles,
-
       selectedTokens,
       savedTokens,
       reductionPercent: Number(reductionPercent.toFixed(2)),
     },
-
     files: fileEntries,
   };
 
@@ -450,15 +443,12 @@ export async function buildContext(
     contextPacket,
     monitoringEvent,
     repoMap,
-
     selectedTokens,
     wholeRepoTokens,
     savedTokens,
     reductionPercent: Number(reductionPercent.toFixed(2)),
-
     totalBytes,
     estimatedTokens,
-
     session: updatedSession
       ? {
           sessionId: updatedSession.id,

@@ -47,6 +47,9 @@ try {
     for (const skillPath of result.skillPaths) {
       console.log(`Skill: ${skillPath}`);
     }
+    if (result.rulePath) {
+      console.log(`Rule: ${result.rulePath}`);
+    }
     console.log(`MCP package: ${result.packageSpec}`);
     console.log("Restart Cursor or reload MCPs to pick up the changes.");
   } else if (command === "cursor-config") {

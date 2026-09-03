@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "repository": "JlikSenior/RepoScope",
+  "startCommit": "12ef553294645d6e96c09d5e77001c87f4054482",
+  "tasks": [
+    {
+      "taskId": "session-start-scaling",
+      "category": "performance",
+      "prompt": "Starting a RepoScope session becomes unnecessarily expensive on large repositories because the whole repository is read and tokenized just to establish the baseline. Make session startup use a fast repository-size/token estimate without reading every file's contents. Preserve the existing session result contract and token-budget semantics.",
+      "verifier": "session-start-scaling"
+    },
+    {
+      "taskId": "context-read-dedup",
+      "category": "correctness",
+      "prompt": "Within one RepoScope session, source delivered by repo_context must participate in the same deduplication state as repo_read. After repo_context delivers a file, a later repo_read of that same file must return it as already_read and must not charge the session source budget again.",
+      "verifier": "context-read-dedup"
+    },
+    {
+      "taskId": "bounded-search-results",
+      "category": "context-efficiency",
+      "prompt": "repo_search can return hundreds of paths for broad terms, which creates avoidable context overhead. Add a caller-configurable result limit with a safe default of 20 and a hard maximum of 100. The returned result list must respect the requested limit.",
+      "verifier": "bounded-search-results"
+    },
+    {
+      "taskId": "mcp-typecheck-coverage",
+      "category": "build-correctness",
+      "prompt": "The TypeScript validation currently misses the MCP .mts entrypoint. Make the normal TypeScript typecheck configuration include the MCP .mts source files so MCP compile errors cannot silently bypass CI/type checking.",
+      "verifier": "mcp-typecheck-coverage"
+    },
+    {
+      "taskId": "search-ai-readable-boundary",
+      "category": "correctness",
+      "prompt": "repo_search must obey the same AI-readable repository boundary as repo_read/context. Search results must not expose files that the scanner rejects, including files larger than the configured maximum AI-readable file size.",
+      "verifier": "search-ai-readable-boundary"
+    }
+  ]
+}

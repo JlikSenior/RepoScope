@@ -1,12 +1,12 @@
 # RepoScope
 
-RepoScope is a local repository context and change-control layer for AI coding agents. It lets an agent search and read only the code it needs, enforce task-level token budgets, measure context delivery, and make guarded Git patch edits.
+RepoScope is a local repository context and change-control layer for AI coding agents. It lets an agent search and read only the code it needs, enforce task-level token budgets, measure context delivery, make guarded Git patch edits, and run repository-approved verification commands.
 
-The core is intentionally AI-provider agnostic: the agent does the reasoning; RepoScope handles repository boundaries, search, reads, context budgets, deduplication, observability, and safe write policy.
+The core is intentionally AI-provider agnostic: the agent does the reasoning; RepoScope handles repository boundaries, search, reads, context budgets, deduplication, observability, safe write policy, and command execution policy.
 
 ## Current status
 
-Early MVP. Read/exploration works on real repositories, guarded text-patch writes are available behind a session, and the same MCP tool surface can be served over stdio or loopback HTTP.
+Early MVP. Read/exploration works on real repositories, guarded text-patch writes are available behind a session, allowlisted verification commands can be executed without arbitrary command strings, and the same MCP tool surface can be served over stdio or loopback HTTP.
 
 ## Requirements
 
@@ -82,13 +82,15 @@ Current tools:
 | Tool | Purpose |
 | --- | --- |
 | `repo_session_start` | Start a task-level source-token budget and estimate repository size |
-| `repo_session_status` | Inspect remaining budget, reads, writes, events, and delivery metrics |
+| `repo_session_status` | Inspect remaining budget, reads, writes, command runs, events, and delivery metrics |
 | `repo_search` | Search with ripgrep and return a bounded ranked result set |
 | `repo_read` | Read explicit repository files under per-call and task-level budgets |
 | `repo_context` | Build a bounded context packet, avoiding source already delivered in the session |
 | `repo_status` | Inspect Git working-tree status for the session repository |
 | `repo_apply_patch` | Apply a validated text patch after existing target files have been read |
 | `repo_diff` | Inspect the current Git diff under an output-token budget |
+| `repo_commands` | List command names explicitly allowlisted by the repository |
+| `repo_run` | Run one allowlisted command with a timeout and output-token budget |
 
 ### Intended coding loop
 
@@ -98,8 +100,11 @@ Current tools:
 4. `repo_read` the most relevant files
 5. Agent reasons and repeats search/read only when needed
 6. `repo_apply_patch` to edit code
-7. `repo_diff` and `repo_status` to review the change
-8. `repo_session_status` to inspect budget and exploration efficiency
+7. `repo_commands` to discover repository-approved verification commands
+8. `repo_run` to execute tests, type checks, builds, or other approved checks
+9. Agent uses failures to revise the code and rerun checks
+10. `repo_diff` and `repo_status` to review the final change
+11. `repo_session_status` to inspect budget and exploration efficiency
 
 The agent should not request the whole repository by default.
 
@@ -117,10 +122,48 @@ Write tools deliberately do **not** provide arbitrary filesystem or shell access
 - Binary patches are rejected.
 - `git apply --check` must succeed before the patch is applied.
 - Modified files invalidate their old read state so the agent can reread the new version.
+- `.reposcope.json` is a protected policy file and cannot be changed through `repo_apply_patch`.
 
 `repo_diff` is output-budgeted so a large working-tree diff cannot unexpectedly consume the agent's context.
 
-RepoScope does not yet expose arbitrary command execution. Test/build execution will be added separately with an allowlisted command policy.
+## Allowlisted test/build execution
+
+RepoScope still does **not** expose arbitrary command strings. A repository opts into executable checks with a root-level `.reposcope.json` file:
+
+```json
+{
+  "commands": {
+    "test": ["npm", "test"],
+    "check": ["npm", "run", "check"],
+    "typecheck": ["npm", "run", "typecheck"]
+  }
+}
+```
+
+The format is language-independent. For another repository it can just as easily contain commands such as:
+
+```json
+{
+  "commands": {
+    "test": ["pytest", "-q"],
+    "build": ["cargo", "build", "--locked"]
+  }
+}
+```
+
+The command-selection safety model is intentionally narrow:
+
+- The Agent chooses only an allowlisted **command name** such as `test` or `build`.
+- The executable and argument vector come entirely from `.reposcope.json`; the Agent cannot supply or append shell arguments.
+- `.reposcope.json` cannot be created, edited, renamed, or deleted through RepoScope's patch tool.
+- Commands run with `shell: false` in the Git repository root.
+- Executable entries containing paths such as `../tool` or `./script` are rejected; use an executable available on `PATH`.
+- Each run has a configurable timeout capped at 5 minutes.
+- Captured process output is bounded and the MCP response has an explicit token budget.
+- Non-zero test/build exits are returned to the Agent as diagnostic output rather than being hidden as tool errors.
+- Session metrics record total command runs and failed runs.
+
+This is **not an operating-system sandbox**. Approved tests and builds execute repository code with the permissions of the RepoScope process. The allowlist controls which verification entrypoints an Agent may select; it does not make untrusted repository code safe to execute.
 
 ## Token metrics
 
@@ -151,11 +194,10 @@ npm run check
 
 `npm run check` is the CI gate and runs both type checking and the full automated test suite. Production source files under `src/` do not contain ad-hoc `*-test` harnesses.
 
-Current coverage includes repository scanning/search boundaries, task budgets and cross-tool deduplication, guarded patch writes, diff/status behavior, post-write rereads, and the HTTP MCP transport/tool surface.
+Current coverage includes repository scanning/search boundaries, task budgets and cross-tool deduplication, guarded patch writes, diff/status behavior, post-write rereads, protected command policy files, allowlisted command execution and output budgets, and the HTTP MCP transport/tool surface.
 
 ## Next milestones
 
-- Safe allowlisted test/build execution
 - Faster repository/session metadata caching
 - Better search ranking without increasing context size
 - Session completion reports and cost-per-successful-task metrics

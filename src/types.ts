@@ -168,6 +168,17 @@ export type RepoDiffResult = {
   truncated: boolean;
 };
 
+export type RepoRunResult = {
+  targetPath: string;
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  durationMs: number;
+  output: string;
+  outputTokens: number;
+  truncated: boolean;
+};
+
 export type TaskSession = {
   id: string;
   targetPath: string;
@@ -215,6 +226,14 @@ export type SessionEvent =
       files: string[];
     }
   | {
+      type: "run";
+      timestamp: string;
+      command: string;
+      exitCode: number | null;
+      timedOut: boolean;
+      durationMs: number;
+    }
+  | {
       type: "blocked";
       timestamp: string;
       action: "read" | "context";
@@ -236,6 +255,8 @@ export type SessionMetrics = {
   searchCount: number;
   readCount: number;
   writeCount: number;
+  runCount: number;
+  failedRunCount: number;
   blockedReadCount: number;
   blockedContextCount: number;
   uniqueFilesRead: number;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,15 +10,16 @@ import {
   installCursorIntegration,
 } from "../src/cursor-setup.mjs";
 
-test("Cursor installer preserves existing MCP servers and installs RepoScope skills", async () => {
-  const home = await mkdtemp(join(tmpdir(), "reposcope-cursor-"));
-  const cursorDir = join(home, ".cursor");
+test("Cursor installer defaults to project scope and preserves project MCP servers", async () => {
+  const root = await mkdtemp(join(tmpdir(), "reposcope-cursor-project-"));
+  const project = join(root, "project");
+  const home = join(root, "home");
+  const cursorDir = join(project, ".cursor");
   const mcpPath = join(cursorDir, "mcp.json");
 
   try {
-    await import("node:fs/promises").then(({ mkdir }) =>
-      mkdir(cursorDir, { recursive: true }),
-    );
+    await mkdir(cursorDir, { recursive: true });
+    await mkdir(home, { recursive: true });
     await writeFile(
       mcpPath,
       JSON.stringify({
@@ -33,11 +34,14 @@ test("Cursor installer preserves existing MCP servers and installs RepoScope ski
     );
 
     const result = await installCursorIntegration({
+      projectRoot: project,
       homeDir: home,
       packageRoot: process.cwd(),
     });
     const installed = JSON.parse(await readFile(mcpPath, "utf8"));
 
+    assert.equal(result.scope, "project");
+    assert.equal(result.projectRoot, project);
     assert.deepEqual(installed.mcpServers.existing, {
       command: "example",
       args: [],
@@ -50,38 +54,77 @@ test("Cursor installer preserves existing MCP servers and installs RepoScope ski
     assert.equal(result.skillPaths.length, 2);
 
     const normalSkill = await readFile(
-      join(home, ".agents", "skills", "reposcope", "SKILL.md"),
+      join(project, ".cursor", "skills", "reposcope", "SKILL.md"),
       "utf8",
     );
     const benchmarkSkill = await readFile(
-      join(home, ".agents", "skills", "reposcope-benchmark", "SKILL.md"),
+      join(project, ".cursor", "skills", "reposcope-benchmark", "SKILL.md"),
       "utf8",
     );
 
     assert.match(normalSkill, /name: reposcope/);
     assert.match(benchmarkSkill, /name: reposcope-benchmark/);
+
+    await assert.rejects(
+      readFile(join(home, ".cursor", "mcp.json"), "utf8"),
+      /ENOENT/,
+    );
+    await assert.rejects(
+      readFile(join(home, ".agents", "skills", "reposcope", "SKILL.md"), "utf8"),
+      /ENOENT/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Cursor installer supports explicit global scope", async () => {
+  const home = await mkdtemp(join(tmpdir(), "reposcope-cursor-global-"));
+
+  try {
+    const result = await installCursorIntegration({
+      scope: "global",
+      homeDir: home,
+      packageRoot: process.cwd(),
+    });
+
+    assert.equal(result.scope, "global");
+    assert.equal(result.projectRoot, undefined);
+
+    const installed = JSON.parse(
+      await readFile(join(home, ".cursor", "mcp.json"), "utf8"),
+    );
+    assert.deepEqual(
+      installed.mcpServers.reposcope,
+      buildCursorMcpServer(DEFAULT_NPX_SPEC),
+    );
+    assert.match(
+      await readFile(
+        join(home, ".agents", "skills", "reposcope", "SKILL.md"),
+        "utf8",
+      ),
+      /name: reposcope/,
+    );
   } finally {
     await rm(home, { recursive: true, force: true });
   }
 });
 
-test("Cursor installer refuses to overwrite invalid JSON", async () => {
-  const home = await mkdtemp(join(tmpdir(), "reposcope-cursor-invalid-"));
-  const cursorDir = join(home, ".cursor");
+test("project Cursor installer refuses to overwrite invalid JSON", async () => {
+  const project = await mkdtemp(join(tmpdir(), "reposcope-cursor-invalid-"));
+  const cursorDir = join(project, ".cursor");
   const mcpPath = join(cursorDir, "mcp.json");
 
   try {
-    await import("node:fs/promises").then(({ mkdir }) =>
-      mkdir(cursorDir, { recursive: true }),
-    );
+    await mkdir(cursorDir, { recursive: true });
     await writeFile(mcpPath, "{ invalid json", "utf8");
 
     await assert.rejects(
-      installCursorIntegration({ homeDir: home, packageRoot: process.cwd() }),
+      installCursorIntegration({ projectRoot: project, packageRoot: process.cwd() }),
       /existing file is not valid JSON/,
     );
     assert.equal(await readFile(mcpPath, "utf8"), "{ invalid json");
   } finally {
-    await rm(home, { recursive: true, force: true });
+    await rm(project, { recursive: true, force: true });
   }
 });

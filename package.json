@@ -9,6 +9,7 @@
   "files": [
     "dist",
     "skills",
+    "cursor",
     "README.md"
   ],
   "repository": {

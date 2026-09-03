@@ -33,9 +33,9 @@ test("performance collection distinguishes scan cache hits and ripgrep runs", as
     assert.equal(measured.value, "ok");
     assert.equal(measured.sample.failed, false);
     assert(measured.sample.durationMs >= 0);
-    assert.equal(measured.sample.scan.calls, 2);
+    assert.equal(measured.sample.scan.calls, 3);
     assert.equal(measured.sample.scan.cacheMisses, 1);
-    assert.equal(measured.sample.scan.cacheHits, 1);
+    assert.equal(measured.sample.scan.cacheHits, 2);
     assert.equal(measured.sample.searchRg.runs, 1);
     assert(measured.sample.searchRg.totalMs >= 0);
   } finally {

@@ -1,10 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
-import { buildContext, searchRepo, readRepo } from "./core";
-import { startSession, getSession } from "./sessions";
-import { summarizeSession } from "./monitoring";
-import { createTextResponse } from "./mcp-response";
+
+import { buildContext, readRepo, searchRepo } from "./core.js";
+import { createTextResponse } from "./mcp-response.js";
+import { summarizeSession } from "./monitoring.js";
+import { getSession, startSession } from "./sessions.js";
 
 function createServer() {
   const server = new McpServer({
@@ -17,7 +18,6 @@ function createServer() {
     {
       description:
         "Build a minimal code context packet for a task within a token budget.",
-
       inputSchema: z.object({
         targetPath: z.string(),
         task: z.string(),
@@ -27,7 +27,6 @@ function createServer() {
         sessionId: z.string().optional(),
       }),
     },
-
     async ({
       targetPath,
       task,
@@ -46,27 +45,24 @@ function createServer() {
       });
 
       if (result.selectedFiles.length === 0) {
-        const responseText = "NO_NEW_CONTEXT";
-
-        return createTextResponse("repo_context", responseText, sessionId);
+        return createTextResponse(
+          "repo_context",
+          "NO_NEW_CONTEXT",
+          sessionId,
+        );
       }
 
       const responseText = JSON.stringify({
         contextPacket: result.contextPacket,
-
         selectedFiles: result.selectedFiles.map((file) => file.path),
-
         skippedFiles: result.skippedFiles,
-
         selectionSource: result.monitoringEvent.selectionSource,
-
         session: result.session
           ? {
               usedTokens: result.session.usedTokens,
               remainingTokens: result.session.remainingTokens,
             }
           : undefined,
-
         tokens: {
           wholeRepo: result.wholeRepoTokens,
           selected: result.selectedTokens,
@@ -84,26 +80,26 @@ function createServer() {
     {
       description:
         "Search a repository for files related to one or more code search terms.",
-
       inputSchema: z.object({
         targetPath: z.string(),
         searchTerms: z.array(z.string()),
+        limit: z.number().int().min(1).max(100).optional(),
         sessionId: z.string().optional(),
       }),
     },
-
-    async ({ targetPath, searchTerms, sessionId }) => {
+    async ({ targetPath, searchTerms, limit, sessionId }) => {
       const result = await searchRepo({
         targetPath,
         searchTerms,
+        limit,
         sessionId,
       });
 
-      const responseText = JSON.stringify({
-        results: result.results,
-      });
-
-      return createTextResponse("repo_search", responseText, sessionId);
+      return createTextResponse(
+        "repo_search",
+        JSON.stringify({ results: result.results }),
+        sessionId,
+      );
     },
   );
 
@@ -112,18 +108,13 @@ function createServer() {
     {
       description:
         "Read specific repository files within a strict token budget.",
-
       inputSchema: z.object({
         targetPath: z.string(),
-
         files: z.array(z.string()),
-
         budgetTokens: z.number().int().positive(),
-
         sessionId: z.string().optional(),
       }),
     },
-
     async ({ targetPath, files, budgetTokens, sessionId }) => {
       const result = await readRepo({
         targetPath,
@@ -146,9 +137,11 @@ function createServer() {
         parts.push(`REMAINING ${result.session.remainingTokens}`);
       }
 
-      const responseText = parts.join("\n\n");
-
-      return createTextResponse("repo_read", responseText, sessionId);
+      return createTextResponse(
+        "repo_read",
+        parts.join("\n\n"),
+        sessionId,
+      );
     },
   );
 
@@ -157,14 +150,12 @@ function createServer() {
     {
       description:
         "Start a repository exploration session with a total token budget.",
-
       inputSchema: z.object({
         targetPath: z.string(),
         task: z.string(),
         budgetTokens: z.number().int().positive(),
       }),
     },
-
     async ({ targetPath, task, budgetTokens }) => {
       const result = await startSession({
         targetPath,
@@ -172,14 +163,11 @@ function createServer() {
         budgetTokens,
       });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
+      return createTextResponse(
+        "repo_session_start",
+        JSON.stringify(result),
+        result.sessionId,
+      );
     },
   );
 
@@ -187,13 +175,11 @@ function createServer() {
     "repo_session_status",
     {
       description:
-        "Get the current token usage and remaining budget for a repository exploration session.",
-
+        "Get token usage, exploration history, and remaining budget for a session.",
       inputSchema: z.object({
         sessionId: z.string(),
       }),
     },
-
     async ({ sessionId }) => {
       const session = getSession(sessionId);
 
@@ -202,12 +188,9 @@ function createServer() {
       }
 
       const metrics = summarizeSession(session);
-
       const result = {
         ...metrics,
-
         deliveredByTool: session.deliveredByTool,
-
         readFiles: session.readFiles,
         events: session.events,
       };
@@ -215,8 +198,8 @@ function createServer() {
       return {
         content: [
           {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
+            type: "text" as const,
+            text: JSON.stringify(result),
           },
         ],
       };
@@ -227,5 +210,4 @@ function createServer() {
 }
 
 void serveStdio(createServer);
-
 console.error("RepoScope MCP server running on stdio");

@@ -1,17 +1,18 @@
 # RepoScope
 
-RepoScope is a local repository exploration layer for AI coding agents. It lets an agent search and read only the code it needs, while enforcing token budgets and measuring how much repository context is actually delivered.
+RepoScope is a local repository context and change-control layer for AI coding agents. It lets an agent search and read only the code it needs, enforce task-level token budgets, measure context delivery, and make guarded Git patch edits.
 
-The core is intentionally AI-provider agnostic: the agent does the reasoning; RepoScope handles repository boundaries, search, reads, context budgets, deduplication, and observability.
+The core is intentionally AI-provider agnostic: the agent does the reasoning; RepoScope handles repository boundaries, search, reads, context budgets, deduplication, observability, and safe write policy.
 
 ## Current status
 
-Early MVP. The read/exploration path works; write/edit tools are not enabled yet.
+Early MVP. Read/exploration is stable enough for real repositories, and guarded text-patch writes are available behind a session.
 
 ## Requirements
 
 - Node.js 20+
 - npm
+- Git
 - [ripgrep (`rg`)](https://github.com/BurntSushi/ripgrep) available on `PATH`
 
 On Ubuntu/Debian:
@@ -24,7 +25,7 @@ sudo apt install ripgrep
 
 ```bash
 npm install
-npm run typecheck
+npm run check
 ```
 
 ## CLI
@@ -46,7 +47,7 @@ The CLI currently writes these diagnostic files into the target repository:
 - `monitoring-log.jsonl`
 - `monitoring-summary.json`
 
-For agent integrations, prefer MCP because it is read-only by default and does not need to write these files.
+For agent integrations, prefer MCP. The MCP flow does not need these diagnostic files.
 
 ## MCP server
 
@@ -60,22 +61,45 @@ Current tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `repo_session_start` | Start a task-level token budget and estimate repository size |
-| `repo_session_status` | Inspect remaining budget, reads, events, and delivery metrics |
-| `repo_search` | Search the repository with ripgrep and return a bounded ranked result set |
+| `repo_session_start` | Start a task-level source-token budget and estimate repository size |
+| `repo_session_status` | Inspect remaining budget, reads, writes, events, and delivery metrics |
+| `repo_search` | Search with ripgrep and return a bounded ranked result set |
 | `repo_read` | Read explicit repository files under per-call and task-level budgets |
-| `repo_context` | Build a bounded context packet, avoiding files already delivered in the session |
+| `repo_context` | Build a bounded context packet, avoiding source already delivered in the session |
+| `repo_status` | Inspect Git working-tree status for the session repository |
+| `repo_apply_patch` | Apply a validated text patch after existing target files have been read |
+| `repo_diff` | Inspect the current Git diff under an output-token budget |
 
-### Intended agent loop
+### Intended coding loop
 
 1. `repo_session_start`
 2. Agent derives a few search terms from the user's task
 3. `repo_search`
 4. `repo_read` the most relevant files
-5. Agent reasons about the code and repeats search/read only when needed
-6. `repo_session_status` to inspect budget and exploration efficiency
+5. Agent reasons and repeats search/read only when needed
+6. `repo_apply_patch` to edit code
+7. `repo_diff` and `repo_status` to review the change
+8. `repo_session_status` to inspect budget and exploration efficiency
 
 The agent should not request the whole repository by default.
+
+## Safe write policy
+
+Write tools deliberately do **not** provide arbitrary filesystem or shell access.
+
+`repo_apply_patch` currently enforces:
+
+- `targetPath` must be the Git repository root.
+- A valid task session is required.
+- Existing files touched by the patch must have been read in that same session first.
+- New text files may be introduced without a prior read.
+- Patch paths cannot be absolute, escape with `..`, or target `.git`.
+- Binary patches are rejected.
+- `git apply --check` must succeed before the patch is applied.
+
+`repo_diff` is output-budgeted so a large working-tree diff cannot unexpectedly consume the agent's context.
+
+RepoScope does not yet expose arbitrary command execution. Test/build execution will be added separately with an allowlisted command policy.
 
 ## Token metrics
 
@@ -97,16 +121,20 @@ RepoScope uses `rg --files`, so it respects normal ignore rules such as `.gitign
 ## Development
 
 ```bash
-npm run typecheck
+npm run check
+```
+
+For the current manual MCP end-to-end harness:
+
+```bash
 npm run mcp:test
 ```
 
-`mcp:test` is currently an integration harness and expects the local test fixture used during MVP development. It will be replaced by self-contained automated tests.
-
 ## Next milestones
 
-- Self-contained automated integration tests
+- MCP-specific automated integration coverage
+- Safe allowlisted test/build execution
 - Faster repository/session metadata caching
 - Better search ranking without increasing context size
-- Session completion reports and cost-per-task metrics
-- Safe write/apply-patch/test tools for coding agents
+- Session completion reports and cost-per-successful-task metrics
+- Secure MCP Tunnel / Web ChatGPT setup for local repository takeover

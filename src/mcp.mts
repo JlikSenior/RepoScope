@@ -11,6 +11,7 @@ import {
   summarizeSession,
 } from "./monitoring.js";
 import { listAllowedCommands, runAllowedCommand } from "./runner.js";
+import { persistSessionReport } from "./session-history.js";
 import {
   finishSession,
   getSessionRecord,
@@ -334,6 +335,15 @@ export function createRepoScopeServer(): McpServer {
     async ({ sessionId, outcome, note }) => {
       const session = finishSession(sessionId, outcome, note);
       const report = buildSessionFinishReport(session);
+
+      try {
+        await persistSessionReport(session, report);
+      } catch (error) {
+        console.error(
+          "RepoScope session history persistence failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
 
       return createTextResponse(
         "repo_session_finish",

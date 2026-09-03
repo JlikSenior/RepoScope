@@ -8,12 +8,16 @@ alwaysApply: true
 For coding tasks in this project, use RepoScope MCP as the repository context gateway.
 
 - Start one RepoScope task session with `repo_session_start` before repository exploration.
-- Use `repo_search`, `repo_read`, and `repo_context` for repository search, codebase exploration, and source reads.
+- Use `repo_search` for localization. Search results include bounded match line numbers and estimated file size.
+- Prefer `repo_read` line ranges around relevant matches. Start narrow, usually about 80-160 lines, and expand only when a concrete information gap remains.
+- Do not read an entire large source file merely because one search hit points into it. Use whole-file reads only for clearly small files or when the whole file is genuinely required.
+- Avoid `repo_context` for broad large-file exploration; prefer `repo_search` plus ranged `repo_read`.
 - Keep the same `sessionId` for the task.
 - Do not use Cursor built-in codebase search, grep, semantic search, or direct source-file reads to discover or inspect repository code while RepoScope is available.
 - Do not silently bypass RepoScope if a RepoScope search/read/context call fails. Report the limitation instead.
 - Acquire source incrementally. Do not request or read the whole repository by default.
 - Cursor may use its normal reasoning and editing facilities after the relevant source has been obtained through RepoScope.
+- RepoScope guarded patching requires complete reads of existing files; partial ranges are intentionally insufficient for that guarded write path.
 - Use repository-approved verification when useful.
 - Finish the RepoScope task session with `repo_session_finish` when the task is complete or abandoned.
 

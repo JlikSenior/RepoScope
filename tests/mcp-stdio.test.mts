@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -28,8 +28,20 @@ function textFrom(result: TextToolResult): string {
   return block.text;
 }
 
-test("stdio MCP exposes and completes a local repository session", async () => {
+function cleanEnv(extra: Record<string, string>): Record<string, string> {
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    ),
+    ...extra,
+  };
+}
+
+test("stdio MCP exposes, completes, and persists a local repository session", async () => {
   const root = await mkdtemp(join(tmpdir(), "reposcope-stdio-"));
+  const stateRoot = await mkdtemp(join(tmpdir(), "reposcope-stdio-state-"));
   await execFileAsync("git", ["init", "-q"], { cwd: root });
   await writeFile(join(root, "sample.ts"), "export const sample = true;\n");
   await execFileAsync("git", ["add", "."], { cwd: root });
@@ -41,6 +53,7 @@ test("stdio MCP exposes and completes a local repository session", async () => {
   const transport = new StdioClientTransport({
     command: "npx",
     args: ["tsx", "src/mcp.mts"],
+    env: cleanEnv({ REPOSCOPE_STATE_DIR: stateRoot }),
   });
 
   try {
@@ -94,8 +107,16 @@ test("stdio MCP exposes and completes a local repository session", async () => {
 
     assert.equal(status.status, "finished");
     assert.equal(status.outcome, "success");
+
+    const projects = await readdir(join(stateRoot, "projects"));
+    assert.equal(projects.length, 1);
+    const sessionFiles = await readdir(
+      join(stateRoot, "projects", projects[0], "sessions"),
+    );
+    assert.deepEqual(sessionFiles, [`${started.sessionId}.json`]);
   } finally {
     await client.close();
     await rm(root, { recursive: true, force: true });
+    await rm(stateRoot, { recursive: true, force: true });
   }
 });

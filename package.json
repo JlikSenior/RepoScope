@@ -3,11 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "description": "A token-budgeted repository exploration layer for local AI coding agents.",
+  "bin": {
+    "reposcope": "dist/bin.mjs"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JlikSenior/RepoScope.git"
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts tests/*.test.mts",
     "benchmark:pilot:check": "node --check benchmarks/pilot/verify.mjs",
-    "check": "npm run typecheck && npm test && npm run benchmark:pilot:check",
+    "package:check": "npm run build && node scripts/check-package.mjs",
+    "check": "npm run typecheck && npm test && npm run benchmark:pilot:check && npm run package:check",
     "benchmark:report": "tsx src/benchmark-report.ts",
     "benchmark:pilot:verify": "node benchmarks/pilot/verify.mjs",
     "cli": "tsx src/index.ts",

@@ -25,6 +25,8 @@ function makeSession(id: string, targetPath: string): TaskSession {
     deliveredTokens: 0,
     deliveredByTool: {},
     readFiles: {},
+    readRanges: {},
+    fullyReadFiles: {},
     events: [],
     createdAt: "2026-09-02T23:59:00.000Z",
   };
@@ -63,6 +65,7 @@ function makeReport(
       blockedReadCount: 0,
       blockedContextCount: 0,
       uniqueFilesRead: sessionId === "a" ? 3 : 6,
+      sourceLinesRead: sessionId === "a" ? 120 : 280,
       utilizationPercent: sessionId === "a" ? 10 : 30,
     },
     ...overrides,
@@ -113,6 +116,7 @@ test("finished session reports persist per project and aggregate into a trend re
     });
     assert.equal(summary.averages.usedTokens, 200);
     assert.equal(summary.averages.uniqueFilesRead, 4.5);
+    assert.equal(summary.averages.sourceLinesRead, 200);
     assert.equal(summary.averages.sourceReductionPercent, 98);
     assert.deepEqual(
       summary.recentSessions.map((session) => session.sessionId),

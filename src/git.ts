@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { realpath } from "node:fs/promises";
+import { access, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { getEncoding } from "js-tiktoken";
 
@@ -17,6 +17,13 @@ const encoding = getEncoding("cl100k_base");
 type ProcessResult = {
   stdout: string;
   stderr: string;
+};
+
+export type RepoPatchPlan = {
+  targetPath: string;
+  files: string[];
+  existingFiles: string[];
+  newFiles: string[];
 };
 
 function runProcess(
@@ -51,8 +58,7 @@ function runProcess(
       if (!allowedExitCodes.includes(exitCode)) {
         reject(
           new Error(
-            stderr.trim() ||
-              `${command} exited with code ${exitCode}`,
+            stderr.trim() || `${command} exited with code ${exitCode}`,
           ),
         );
         return;
@@ -153,6 +159,39 @@ function extractPatchFiles(patch: string): string[] {
   return [...files];
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function planRepoPatch(
+  request: RepoApplyPatchRequest,
+): Promise<RepoPatchPlan> {
+  const targetPath = await resolveGitRoot(request.targetPath);
+  const files = extractPatchFiles(request.patch);
+  const existingFiles: string[] = [];
+  const newFiles: string[] = [];
+
+  for (const file of files) {
+    if (await fileExists(resolve(targetPath, file))) {
+      existingFiles.push(file);
+    } else {
+      newFiles.push(file);
+    }
+  }
+
+  return {
+    targetPath,
+    files,
+    existingFiles,
+    newFiles,
+  };
+}
+
 export async function getRepoStatus(
   request: RepoStatusRequest,
 ): Promise<RepoStatusResult> {
@@ -172,26 +211,25 @@ export async function getRepoStatus(
 export async function applyRepoPatch(
   request: RepoApplyPatchRequest,
 ): Promise<RepoApplyPatchResult> {
-  const targetPath = await resolveGitRoot(request.targetPath);
-  const files = extractPatchFiles(request.patch);
+  const plan = await planRepoPatch(request);
   const commonArgs = ["--recount", "--whitespace=nowarn", "-"];
 
   await runProcess(
     "git",
-    ["-C", targetPath, "apply", "--check", ...commonArgs],
-    targetPath,
+    ["-C", plan.targetPath, "apply", "--check", ...commonArgs],
+    plan.targetPath,
     request.patch,
   );
   await runProcess(
     "git",
-    ["-C", targetPath, "apply", ...commonArgs],
-    targetPath,
+    ["-C", plan.targetPath, "apply", ...commonArgs],
+    plan.targetPath,
     request.patch,
   );
 
   return {
-    targetPath,
-    files,
+    targetPath: plan.targetPath,
+    files: plan.files,
   };
 }
 

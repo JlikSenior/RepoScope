@@ -10,7 +10,7 @@ import {
   installCursorIntegration,
 } from "../src/cursor-setup.mjs";
 
-test("Cursor installer defaults to project scope and preserves project MCP servers", async () => {
+test("Cursor installer defaults to project scope and installs MCP, skills, and always-on rule", async () => {
   const root = await mkdtemp(join(tmpdir(), "reposcope-cursor-project-"));
   const project = join(root, "project");
   const home = join(root, "home");
@@ -52,6 +52,10 @@ test("Cursor installer defaults to project scope and preserves project MCP serve
     );
     assert.equal(installed.custom, true);
     assert.equal(result.skillPaths.length, 2);
+    assert.equal(
+      result.rulePath,
+      join(project, ".cursor", "rules", "reposcope.mdc"),
+    );
 
     const normalSkill = await readFile(
       join(project, ".cursor", "skills", "reposcope", "SKILL.md"),
@@ -61,9 +65,15 @@ test("Cursor installer defaults to project scope and preserves project MCP serve
       join(project, ".cursor", "skills", "reposcope-benchmark", "SKILL.md"),
       "utf8",
     );
+    const rule = await readFile(
+      join(project, ".cursor", "rules", "reposcope.mdc"),
+      "utf8",
+    );
 
     assert.match(normalSkill, /name: reposcope/);
     assert.match(benchmarkSkill, /name: reposcope-benchmark/);
+    assert.match(rule, /alwaysApply: true/);
+    assert.match(rule, /Do not use Cursor built-in codebase search/);
 
     await assert.rejects(
       readFile(join(home, ".cursor", "mcp.json"), "utf8"),
@@ -78,7 +88,7 @@ test("Cursor installer defaults to project scope and preserves project MCP serve
   }
 });
 
-test("Cursor installer supports explicit global scope", async () => {
+test("Cursor installer supports explicit global scope without project rule", async () => {
   const home = await mkdtemp(join(tmpdir(), "reposcope-cursor-global-"));
 
   try {
@@ -90,6 +100,7 @@ test("Cursor installer supports explicit global scope", async () => {
 
     assert.equal(result.scope, "global");
     assert.equal(result.projectRoot, undefined);
+    assert.equal(result.rulePath, undefined);
 
     const installed = JSON.parse(
       await readFile(join(home, ".cursor", "mcp.json"), "utf8"),
@@ -104,6 +115,10 @@ test("Cursor installer supports explicit global scope", async () => {
         "utf8",
       ),
       /name: reposcope/,
+    );
+    await assert.rejects(
+      readFile(join(home, ".cursor", "rules", "reposcope.mdc"), "utf8"),
+      /ENOENT/,
     );
   } finally {
     await rm(home, { recursive: true, force: true });

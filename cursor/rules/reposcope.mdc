@@ -1,0 +1,20 @@
+---
+description: Enforce RepoScope as the repository context gateway for this project
+alwaysApply: true
+---
+
+# RepoScope repository access policy
+
+For coding tasks in this project, use RepoScope MCP as the repository context gateway.
+
+- Start one RepoScope task session with `repo_session_start` before repository exploration.
+- Use `repo_search`, `repo_read`, and `repo_context` for repository search, codebase exploration, and source reads.
+- Keep the same `sessionId` for the task.
+- Do not use Cursor built-in codebase search, grep, semantic search, or direct source-file reads to discover or inspect repository code while RepoScope is available.
+- Do not silently bypass RepoScope if a RepoScope search/read/context call fails. Report the limitation instead.
+- Acquire source incrementally. Do not request or read the whole repository by default.
+- Cursor may use its normal reasoning and editing facilities after the relevant source has been obtained through RepoScope.
+- Use repository-approved verification when useful.
+- Finish the RepoScope task session with `repo_session_finish` when the task is complete or abandoned.
+
+This rule controls repository context acquisition; RepoScope is not the reasoning model or editor.

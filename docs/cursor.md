@@ -16,6 +16,8 @@ By default, `cursor-install` is **project-scoped**. It writes only inside the cu
 <project>/
   .cursor/
     mcp.json
+    rules/
+      reposcope.mdc
     skills/
       reposcope/
         SKILL.md
@@ -43,7 +45,11 @@ The project MCP entry launches RepoScope through `npx`:
 
 Existing project MCP servers in `.cursor/mcp.json` are preserved.
 
-Cursor officially supports project MCP configuration at `.cursor/mcp.json` and project skills under `.cursor/skills/`, so RepoScope remains available only in that workspace. This is the recommended setup while RepoScope is being evaluated.
+The installer also adds `.cursor/rules/reposcope.mdc` as an **Always Apply** project rule. Cursor includes Always Apply project rules in every Agent chat for the workspace, so the Agent is persistently instructed to use RepoScope for repository search/read/context instead of its built-in repository exploration tools.
+
+This is behavioral guidance, not a security boundary: model instructions cannot physically disable Cursor's native tools. Benchmark runs should still be checked for direct-read/search fallback.
+
+Cursor officially supports project MCP configuration at `.cursor/mcp.json`, project rules under `.cursor/rules/`, and project skills under `.cursor/skills/`, so RepoScope remains available only in that workspace. This is the recommended setup while RepoScope is being evaluated.
 
 To install into a different project directory without changing the shell working directory:
 
@@ -63,13 +69,13 @@ Global installation is available, but it is **not the default**:
 npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install --global
 ```
 
-This writes the MCP configuration to `~/.cursor/mcp.json` and the skills to `~/.agents/skills/`.
+This writes the MCP configuration to `~/.cursor/mcp.json` and the skills to `~/.agents/skills/`. It does not create the project-specific Always Apply rule.
 
 During testing, prefer project scope so RepoScope can be enabled or removed independently for each repository.
 
 ## Multiple projects
 
-With project-scoped installation, each workspace has its own Cursor MCP registration and project skills.
+With project-scoped installation, each workspace has its own Cursor MCP registration, project rule, and project skills.
 
 RepoScope runtime state is independently isolated as well. Each target repository is canonicalized and assigned a path-derived project id. RepoScope-owned diagnostic/state files are kept outside the repository in a per-project state directory.
 
@@ -77,7 +83,7 @@ Task sessions are also bound to the repository they were created for. A `session
 
 Therefore these are separate concerns:
 
-- `.cursor/` controls **where Cursor exposes RepoScope**.
+- `.cursor/` controls **where Cursor exposes and instructs use of RepoScope**.
 - RepoScope's user state directory controls **where runtime state is stored and isolated**.
 
 ## Normal use
@@ -85,18 +91,22 @@ Therefore these are separate concerns:
 After installation, restart Cursor or reload MCPs. In the project, confirm that:
 
 - MCPs includes `reposcope`.
+- Rules includes the Always Apply RepoScope project rule.
 - Skills includes `reposcope` and `reposcope-benchmark`.
 
-For normal coding, the `reposcope` skill can be selected explicitly with `/reposcope` or applied automatically when Cursor considers it relevant.
+The Always Apply rule is the persistent guardrail. For normal coding you can simply ask for the task. You can still invoke `/reposcope` explicitly when you want the detailed workflow instructions attached on demand.
 
-The skill tells the Agent to:
+Expected exploration sequence:
 
-1. start one RepoScope session for the task,
-2. use RepoScope for repository search/read/context,
-3. keep one `sessionId`,
-4. acquire source incrementally instead of reading the whole repository,
-5. keep normal editing ergonomics,
-6. finish the RepoScope session at the end.
+1. `repo_session_start`
+2. `repo_search`
+3. `repo_read` / `repo_context`
+4. Agent reasoning and editing
+5. repeat bounded RepoScope exploration only when necessary
+6. verification when useful
+7. `repo_session_finish`
+
+If the Agent starts using Cursor's built-in codebase search/read for repository exploration, stop that run and point out the RepoScope project rule. For benchmark runs, treat such fallback as contamination.
 
 ## Benchmark mode
 

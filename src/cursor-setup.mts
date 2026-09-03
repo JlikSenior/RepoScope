@@ -1,14 +1,18 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_NPX_SPEC = "github:JlikSenior/RepoScope#main";
 
+export type CursorInstallScope = "project" | "global";
+
 export type CursorInstallResult = {
+  scope: CursorInstallScope;
   mcpConfigPath: string;
   skillPaths: string[];
   packageSpec: string;
+  projectRoot?: string;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -73,18 +77,32 @@ async function installSkill(
 }
 
 export async function installCursorIntegration(options?: {
+  scope?: CursorInstallScope;
+  projectRoot?: string;
   homeDir?: string;
   packageRoot?: string;
   packageSpec?: string;
 }): Promise<CursorInstallResult> {
+  const scope = options?.scope ?? "project";
   const homeDir = options?.homeDir ?? homedir();
   const packageRoot =
     options?.packageRoot ?? fileURLToPath(new URL("../", import.meta.url));
   const packageSpec = options?.packageSpec ?? DEFAULT_NPX_SPEC;
-  const cursorDir = join(homeDir, ".cursor");
-  const mcpConfigPath = join(cursorDir, "mcp.json");
-  const skillRoot = join(homeDir, ".agents", "skills");
 
+  let cursorDir: string;
+  let skillRoot: string;
+  let projectRoot: string | undefined;
+
+  if (scope === "project") {
+    projectRoot = await realpath(resolve(options?.projectRoot ?? process.cwd()));
+    cursorDir = join(projectRoot, ".cursor");
+    skillRoot = join(cursorDir, "skills");
+  } else {
+    cursorDir = join(homeDir, ".cursor");
+    skillRoot = join(homeDir, ".agents", "skills");
+  }
+
+  const mcpConfigPath = join(cursorDir, "mcp.json");
   await mkdir(cursorDir, { recursive: true });
 
   const config = await readExistingConfig(mcpConfigPath);
@@ -113,8 +131,10 @@ export async function installCursorIntegration(options?: {
   ]);
 
   return {
+    scope,
     mcpConfigPath,
     skillPaths,
     packageSpec,
+    projectRoot,
   };
 }

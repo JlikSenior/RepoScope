@@ -58,8 +58,18 @@ export async function startSession(
   };
 }
 
-export function getSession(sessionId: string): TaskSession | undefined {
+export function getSessionRecord(sessionId: string): TaskSession | undefined {
   return sessions.get(sessionId);
+}
+
+export function getSession(sessionId: string): TaskSession | undefined {
+  const session = sessions.get(sessionId);
+
+  if (session?.status === "finished") {
+    throw new Error("Session is finished");
+  }
+
+  return session;
 }
 
 export function getActiveSession(sessionId: string): TaskSession {

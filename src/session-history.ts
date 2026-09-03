@@ -1,7 +1,11 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { ensureProjectState, getProjectStatePaths } from "./state.js";
+import {
+  ensureProjectState,
+  getProjectStatePaths,
+  type StatePathOptions,
+} from "./state.js";
 import type { SessionFinishReport, TaskSession } from "./types.js";
 
 export type PersistedSessionRecord = {
@@ -67,8 +71,9 @@ function average(values: number[]): number {
 export async function persistSessionReport(
   session: TaskSession,
   report: SessionFinishReport,
+  options: StatePathOptions = {},
 ): Promise<string> {
-  const paths = await ensureProjectState(session.targetPath);
+  const paths = await ensureProjectState(session.targetPath, options);
   const record: PersistedSessionRecord = {
     schemaVersion: 1,
     projectId: paths.projectId,
@@ -84,8 +89,9 @@ export async function persistSessionReport(
 
 export async function readProjectSessionHistory(
   targetPath: string,
+  options: StatePathOptions = {},
 ): Promise<PersistedSessionRecord[]> {
-  const paths = await ensureProjectState(targetPath);
+  const paths = await ensureProjectState(targetPath, options);
   const entries = await readdir(paths.sessionsDir, { withFileTypes: true });
   const records: PersistedSessionRecord[] = [];
 
@@ -113,9 +119,10 @@ export async function readProjectSessionHistory(
 
 export async function buildProjectSessionHistoryReport(
   targetPath: string,
+  options: StatePathOptions = {},
 ): Promise<ProjectSessionHistoryReport> {
-  const paths = await getProjectStatePaths(targetPath);
-  const records = await readProjectSessionHistory(targetPath);
+  const paths = await getProjectStatePaths(targetPath, options);
+  const records = await readProjectSessionHistory(targetPath, options);
   const reports = records.map((record) => record.report);
 
   const outcomes = { success: 0, failed: 0, abandoned: 0 };

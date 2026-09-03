@@ -59,6 +59,8 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
   let searchCount = 0;
   let readCount = 0;
   let writeCount = 0;
+  let runCount = 0;
+  let failedRunCount = 0;
   let blockedReadCount = 0;
   let blockedContextCount = 0;
 
@@ -73,6 +75,14 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
 
     if (event.type === "write") {
       writeCount += 1;
+    }
+
+    if (event.type === "run") {
+      runCount += 1;
+
+      if (event.timedOut || event.exitCode !== 0) {
+        failedRunCount += 1;
+      }
     }
 
     if (event.type === "blocked" && event.action === "read") {
@@ -122,6 +132,8 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
     searchCount,
     readCount,
     writeCount,
+    runCount,
+    failedRunCount,
     blockedReadCount,
     blockedContextCount,
     uniqueFilesRead: Object.keys(session.readFiles).length,

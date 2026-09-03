@@ -27,10 +27,7 @@ export type ContextResult = {
   targetPath: string;
   files: string[];
   fileEntries: FileEntry[];
-  searchResults: {
-    path: string;
-    score: number;
-  }[];
+  searchResults: { path: string; score: number }[];
   selectedFiles: SelectedFile[];
   skippedFiles: SkippedFile[];
   contextPacket: string;
@@ -71,14 +68,8 @@ export type RepoMap = {
     wholeRepoTokens: number;
     budgetTokens: number;
     selectionSource: "search" | "file_hints";
-    query: {
-      task: string;
-      searchTerms: string[];
-    };
-    searchResults: {
-      path: string;
-      score: number;
-    }[];
+    query: { task: string; searchTerms: string[] };
+    searchResults: { path: string; score: number }[];
     selectedFiles: string[];
     skippedFiles: SkippedFile[];
     selectedTokens: number;
@@ -105,10 +96,7 @@ export type RepoSearchRequest = {
 
 export type RepoSearchResult = {
   targetPath: string;
-  results: {
-    path: string;
-    score: number;
-  }[];
+  results: { path: string; score: number }[];
 };
 
 export type RepoReadRequest = {
@@ -137,30 +125,11 @@ export type RepoReadResult = {
   };
 };
 
-export type RepoStatusRequest = {
-  targetPath: string;
-};
-
-export type RepoStatusResult = {
-  targetPath: string;
-  lines: string[];
-};
-
-export type RepoApplyPatchRequest = {
-  targetPath: string;
-  patch: string;
-};
-
-export type RepoApplyPatchResult = {
-  targetPath: string;
-  files: string[];
-};
-
-export type RepoDiffRequest = {
-  targetPath: string;
-  budgetTokens: number;
-};
-
+export type RepoStatusRequest = { targetPath: string };
+export type RepoStatusResult = { targetPath: string; lines: string[] };
+export type RepoApplyPatchRequest = { targetPath: string; patch: string };
+export type RepoApplyPatchResult = { targetPath: string; files: string[] };
+export type RepoDiffRequest = { targetPath: string; budgetTokens: number };
 export type RepoDiffResult = {
   targetPath: string;
   diff: string;
@@ -179,10 +148,17 @@ export type RepoRunResult = {
   truncated: boolean;
 };
 
+export type SessionOutcome = "success" | "failed" | "abandoned";
+export type SessionVerificationStatus = "passed" | "failed" | "not_run";
+
 export type TaskSession = {
   id: string;
   targetPath: string;
   task: string;
+  status: "active" | "finished";
+  outcome?: SessionOutcome;
+  note?: string;
+  finishedAt?: string;
   budgetTokens: number;
   usedTokens: number;
   wholeRepoTokens: number;
@@ -234,6 +210,12 @@ export type SessionEvent =
       durationMs: number;
     }
   | {
+      type: "finish";
+      timestamp: string;
+      outcome: SessionOutcome;
+      note?: string;
+    }
+  | {
       type: "blocked";
       timestamp: string;
       action: "read" | "context";
@@ -243,6 +225,9 @@ export type SessionEvent =
 
 export type SessionMetrics = {
   sessionId: string;
+  status: "active" | "finished";
+  outcome?: SessionOutcome;
+  finishedAt?: string;
   budgetTokens: number;
   usedTokens: number;
   remainingTokens: number;
@@ -261,4 +246,20 @@ export type SessionMetrics = {
   blockedContextCount: number;
   uniqueFilesRead: number;
   utilizationPercent: number;
+};
+
+export type SessionFinishReport = {
+  sessionId: string;
+  task: string;
+  outcome: SessionOutcome;
+  note?: string;
+  finishedAt: string;
+  verification: {
+    status: SessionVerificationStatus;
+    command?: string;
+    exitCode?: number | null;
+    timedOut?: boolean;
+  };
+  changedFiles: string[];
+  metrics: SessionMetrics;
 };

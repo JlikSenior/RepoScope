@@ -3,7 +3,9 @@ import { appendFile, readFile } from "node:fs/promises";
 import type {
   MonitoringEvent,
   MonitoringSummary,
+  SessionFinishReport,
   SessionMetrics,
+  SessionVerificationStatus,
   TaskSession,
 } from "./types";
 
@@ -65,24 +67,13 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
   let blockedContextCount = 0;
 
   for (const event of session.events) {
-    if (event.type === "search") {
-      searchCount += 1;
-    }
-
-    if (event.type === "read") {
-      readCount += 1;
-    }
-
-    if (event.type === "write") {
-      writeCount += 1;
-    }
+    if (event.type === "search") searchCount += 1;
+    if (event.type === "read") readCount += 1;
+    if (event.type === "write") writeCount += 1;
 
     if (event.type === "run") {
       runCount += 1;
-
-      if (event.timedOut || event.exitCode !== 0) {
-        failedRunCount += 1;
-      }
+      if (event.timedOut || event.exitCode !== 0) failedRunCount += 1;
     }
 
     if (event.type === "blocked" && event.action === "read") {
@@ -122,6 +113,9 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
 
   return {
     sessionId: session.id,
+    status: session.status,
+    outcome: session.outcome,
+    finishedAt: session.finishedAt,
     budgetTokens: session.budgetTokens,
     usedTokens: session.usedTokens,
     deliveredTokens: session.deliveredTokens,
@@ -140,5 +134,53 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
     utilizationPercent: Number(utilizationPercent.toFixed(2)),
     toolOverheadTokens,
     toolOverheadPercent: Number(toolOverheadPercent.toFixed(2)),
+  };
+}
+
+export function buildSessionFinishReport(
+  session: TaskSession,
+): SessionFinishReport {
+  if (
+    session.status !== "finished" ||
+    !session.outcome ||
+    !session.finishedAt
+  ) {
+    throw new Error("Session is not finished");
+  }
+
+  const changedFiles = new Set<string>();
+  let lastRun:
+    | Extract<TaskSession["events"][number], { type: "run" }>
+    | undefined;
+
+  for (const event of session.events) {
+    if (event.type === "write") {
+      for (const file of event.files) changedFiles.add(file);
+    }
+
+    if (event.type === "run") lastRun = event;
+  }
+
+  let verificationStatus: SessionVerificationStatus = "not_run";
+
+  if (lastRun) {
+    verificationStatus =
+      !lastRun.timedOut && lastRun.exitCode === 0 ? "passed" : "failed";
+  }
+
+  return {
+    sessionId: session.id,
+    task: session.task,
+    outcome: session.outcome,
+    note: session.note,
+    finishedAt: session.finishedAt,
+    verification: {
+      status: verificationStatus,
+      command: lastRun?.command,
+      exitCode: lastRun?.exitCode,
+      timedOut: lastRun?.timedOut,
+    },
+    changedFiles: [...changedFiles].sort(),
+    metrics: summarizeSession(session),
   };
 }

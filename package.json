@@ -1,12 +1,25 @@
 {
   "name": "reposcope",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A token-budgeted repository exploration layer for AI coding agents.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck",
+    "cli": "tsx src/index.ts",
+    "mcp": "tsx src/mcp.mts",
+    "mcp:test": "tsx src/mcp-test.mts"
   },
-  "keywords": [],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "ai",
+    "coding-agent",
+    "context",
+    "repository"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {

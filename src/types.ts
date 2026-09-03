@@ -1,3 +1,13 @@
+export type RepoLineRange = {
+  startLine: number;
+  endLine: number;
+};
+
+export type RepoSearchMatch = {
+  line: number;
+  term: string;
+};
+
 export type ContextRequest = {
   targetPath: string;
   task: string;
@@ -21,13 +31,19 @@ export type SkippedFile = {
   path: string;
   reason: "context_budget_exceeded" | "already_read";
   candidateTokens: number;
+  startLine?: number;
+  endLine?: number;
 };
 
 export type ContextResult = {
   targetPath: string;
   files: string[];
   fileEntries: FileEntry[];
-  searchResults: { path: string; score: number }[];
+  searchResults: Array<{
+    path: string;
+    score: number;
+    matches?: RepoSearchMatch[];
+  }>;
   selectedFiles: SelectedFile[];
   skippedFiles: SkippedFile[];
   contextPacket: string;
@@ -69,7 +85,11 @@ export type RepoMap = {
     budgetTokens: number;
     selectionSource: "search" | "file_hints";
     query: { task: string; searchTerms: string[] };
-    searchResults: { path: string; score: number }[];
+    searchResults: Array<{
+      path: string;
+      score: number;
+      matches?: RepoSearchMatch[];
+    }>;
     selectedFiles: string[];
     skippedFiles: SkippedFile[];
     selectedTokens: number;
@@ -96,12 +116,23 @@ export type RepoSearchRequest = {
 
 export type RepoSearchResult = {
   targetPath: string;
-  results: { path: string; score: number }[];
+  results: Array<{
+    path: string;
+    score: number;
+    sizeBytes: number;
+    estimatedTokens: number;
+    matches: RepoSearchMatch[];
+  }>;
+};
+
+export type RepoReadRangeRequest = RepoLineRange & {
+  path: string;
 };
 
 export type RepoReadRequest = {
   targetPath: string;
-  files: string[];
+  files?: string[];
+  ranges?: RepoReadRangeRequest[];
   budgetTokens: number;
   sessionId?: string;
 };
@@ -110,6 +141,10 @@ export type RepoReadFile = {
   path: string;
   content: string;
   tokens: number;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+  complete: boolean;
 };
 
 export type RepoReadResult = {
@@ -165,6 +200,8 @@ export type TaskSession = {
   deliveredTokens: number;
   deliveredByTool: Record<string, number>;
   readFiles: Record<string, number>;
+  readRanges: Record<string, RepoLineRange[]>;
+  fullyReadFiles: Record<string, true>;
   events: SessionEvent[];
   createdAt: string;
 };
@@ -195,6 +232,7 @@ export type SessionEvent =
       timestamp: string;
       files: string[];
       tokens: number;
+      ranges?: Array<{ path: string; startLine: number; endLine: number }>;
     }
   | {
       type: "write";
@@ -245,6 +283,7 @@ export type SessionMetrics = {
   blockedReadCount: number;
   blockedContextCount: number;
   uniqueFilesRead: number;
+  sourceLinesRead: number;
   utilizationPercent: number;
 };
 

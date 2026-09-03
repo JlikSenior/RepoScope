@@ -57,12 +57,12 @@ export async function applySessionPatch(request: {
     patch: request.patch,
   });
   const unreadFiles = plan.existingFiles.filter(
-    (file) => !(file in session.readFiles),
+    (file) => !session.fullyReadFiles[file],
   );
 
   if (unreadFiles.length > 0) {
     throw new Error(
-      `Existing files must be read before modification: ${unreadFiles.join(", ")}`,
+      `Existing files must be read before modification; files must be fully read before RepoScope patch modification: ${unreadFiles.join(", ")}`,
     );
   }
 

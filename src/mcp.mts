@@ -4,7 +4,12 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
-import { buildContext, readRepo, searchRepo } from "./core.js";
+import {
+  buildContext,
+  MAX_READ_RANGE_LINES,
+  readRepo,
+  searchRepo,
+} from "./core.js";
 import { createTextResponse } from "./mcp-response.js";
 import {
   buildSessionFinishReport,
@@ -35,7 +40,7 @@ export function createRepoScopeServer(): McpServer {
     "repo_context",
     {
       description:
-        "Build a minimal code context packet for a task within a token budget.",
+        "Build a minimal code context packet for a task within a token budget. Prefer repo_search plus ranged repo_read for large files.",
       inputSchema: z.object({
         targetPath: z.string(),
         task: z.string(),
@@ -99,7 +104,7 @@ export function createRepoScopeServer(): McpServer {
     "repo_search",
     {
       description:
-        "Search a repository for files related to one or more code search terms.",
+        "Search a repository and return ranked files with bounded match line numbers and estimated file size so the agent can read only relevant ranges.",
       inputSchema: z.object({
         targetPath: z.string(),
         searchTerms: z.array(z.string()),
@@ -127,28 +132,51 @@ export function createRepoScopeServer(): McpServer {
     "repo_read",
     {
       description:
-        "Read specific repository files within a strict token budget.",
-      inputSchema: z.object({
-        targetPath: z.string(),
-        files: z.array(z.string()),
-        budgetTokens: z.number().int().positive(),
-        sessionId: z.string().optional(),
-      }),
+        `Read repository source within a strict token budget. Prefer ranges returned from repo_search; each explicit range is capped at ${MAX_READ_RANGE_LINES} lines. Whole-file reads remain supported for small files and compatibility.`,
+      inputSchema: z
+        .object({
+          targetPath: z.string(),
+          files: z.array(z.string()).optional(),
+          ranges: z
+            .array(
+              z.object({
+                path: z.string(),
+                startLine: z.number().int().min(1),
+                endLine: z.number().int().min(1),
+              }),
+            )
+            .optional(),
+          budgetTokens: z.number().int().positive(),
+          sessionId: z.string().optional(),
+        })
+        .refine(
+          (value) =>
+            (value.files?.length ?? 0) > 0 || (value.ranges?.length ?? 0) > 0,
+          { message: "Provide at least one file or line range" },
+        ),
     },
-    async ({ targetPath, files, budgetTokens, sessionId }) => {
+    async ({ targetPath, files, ranges, budgetTokens, sessionId }) => {
       const result = await readRepo({
         targetPath,
         files,
+        ranges,
         budgetTokens,
         sessionId,
       });
       const parts: string[] = [];
 
       for (const file of result.files) {
-        parts.push(`FILE ${file.path}\n${file.content}`);
+        const mode = file.complete ? "FULL" : `L${file.startLine}-${file.endLine}`;
+        parts.push(
+          `FILE ${file.path} ${mode} TOTAL_LINES ${file.totalLines}\n${file.content}`,
+        );
       }
       for (const file of result.skippedFiles) {
-        parts.push(`SKIP ${file.path} ${file.reason}`);
+        const range =
+          file.startLine && file.endLine
+            ? ` L${file.startLine}-${file.endLine}`
+            : "";
+        parts.push(`SKIP ${file.path}${range} ${file.reason}`);
       }
       if (result.session) {
         parts.push(`REMAINING ${result.session.remainingTokens}`);
@@ -193,7 +221,7 @@ export function createRepoScopeServer(): McpServer {
     "repo_apply_patch",
     {
       description:
-        "Apply a validated text patch. Existing files must have been read in the current session first.",
+        "Apply a validated text patch. Existing files must have been fully read in the current session first; partial range reads do not authorize RepoScope patching.",
       inputSchema: z.object({
         targetPath: z.string(),
         patch: z.string().min(1),
@@ -377,6 +405,8 @@ export function createRepoScopeServer(): McpServer {
               ...summarizeSession(session),
               deliveredByTool: session.deliveredByTool,
               readFiles: session.readFiles,
+              readRanges: session.readRanges,
+              fullyReadFiles: Object.keys(session.fullyReadFiles),
               events: session.events,
             }),
           },

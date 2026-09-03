@@ -36,6 +36,7 @@ export type ProjectSessionHistoryReport = {
     usedTokens: number;
     deliveredTokens: number;
     uniqueFilesRead: number;
+    sourceLinesRead: number;
     searchCount: number;
     readCount: number;
     sourceReductionPercent: number;
@@ -52,6 +53,7 @@ export type ProjectSessionHistoryReport = {
     usedTokens: number;
     deliveredTokens: number;
     uniqueFilesRead: number;
+    sourceLinesRead: number;
     searchCount: number;
     readCount: number;
     sourceReductionPercent: number;
@@ -63,6 +65,7 @@ type NumericSessionMetricKey =
   | "usedTokens"
   | "deliveredTokens"
   | "uniqueFilesRead"
+  | "sourceLinesRead"
   | "searchCount"
   | "readCount"
   | "sourceReductionPercent"
@@ -163,6 +166,7 @@ export async function buildProjectSessionHistoryReport(
       usedTokens: average(metricValues(reports, "usedTokens")),
       deliveredTokens: average(metricValues(reports, "deliveredTokens")),
       uniqueFilesRead: average(metricValues(reports, "uniqueFilesRead")),
+      sourceLinesRead: average(metricValues(reports, "sourceLinesRead")),
       searchCount: average(metricValues(reports, "searchCount")),
       readCount: average(metricValues(reports, "readCount")),
       sourceReductionPercent: average(
@@ -186,6 +190,7 @@ export async function buildProjectSessionHistoryReport(
         usedTokens: report.metrics.usedTokens,
         deliveredTokens: report.metrics.deliveredTokens,
         uniqueFilesRead: report.metrics.uniqueFilesRead,
+        sourceLinesRead: report.metrics.sourceLinesRead,
         searchCount: report.metrics.searchCount,
         readCount: report.metrics.readCount,
         sourceReductionPercent: report.metrics.sourceReductionPercent,

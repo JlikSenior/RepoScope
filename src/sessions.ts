@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { scanDirectory } from "./scanner";
 import type {
+  RepoLineRange,
   SessionEvent,
   SessionOutcome,
   StartSessionRequest,
@@ -22,6 +23,26 @@ async function estimateWholeRepoTokens(files: string[]): Promise<number> {
   );
 
   return sizes.reduce((sum, tokens) => sum + tokens, 0);
+}
+
+function mergeRanges(ranges: RepoLineRange[]): RepoLineRange[] {
+  const sorted = ranges
+    .map((range) => ({ ...range }))
+    .sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
+  const merged: RepoLineRange[] = [];
+
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+
+    if (!previous || range.startLine > previous.endLine + 1) {
+      merged.push(range);
+      continue;
+    }
+
+    previous.endLine = Math.max(previous.endLine, range.endLine);
+  }
+
+  return merged;
 }
 
 export async function startSession(
@@ -43,6 +64,8 @@ export async function startSession(
     deliveredByTool: {},
     wholeRepoTokens,
     readFiles: {},
+    readRanges: {},
+    fullyReadFiles: {},
     events: [],
     createdAt: new Date().toISOString(),
   };
@@ -138,13 +161,52 @@ export function hasReadFile(sessionId: string, filePath: string): boolean {
   return filePath in session.readFiles;
 }
 
+export function getReadRanges(
+  sessionId: string,
+  filePath: string,
+): RepoLineRange[] {
+  const session = getActiveSession(sessionId);
+  return session.readRanges[filePath]?.map((range) => ({ ...range })) ?? [];
+}
+
+export function recordReadRange(
+  sessionId: string,
+  filePath: string,
+  range: RepoLineRange,
+  tokens: number,
+  totalLines: number,
+): void {
+  const session = getActiveSession(sessionId);
+  const merged = mergeRanges([
+    ...(session.readRanges[filePath] ?? []),
+    range,
+  ]);
+
+  session.readRanges[filePath] = merged;
+  session.readFiles[filePath] = (session.readFiles[filePath] ?? 0) + tokens;
+
+  if (
+    merged.length === 1 &&
+    merged[0].startLine <= 1 &&
+    merged[0].endLine >= totalLines
+  ) {
+    session.fullyReadFiles[filePath] = true;
+  }
+}
+
 export function recordReadFile(
   sessionId: string,
   filePath: string,
   tokens: number,
+  totalLines?: number,
 ): void {
   const session = getActiveSession(sessionId);
-  session.readFiles[filePath] = tokens;
+  session.readFiles[filePath] = (session.readFiles[filePath] ?? 0) + tokens;
+  session.fullyReadFiles[filePath] = true;
+
+  if (totalLines && totalLines > 0) {
+    session.readRanges[filePath] = [{ startLine: 1, endLine: totalLines }];
+  }
 }
 
 export function invalidateReadFiles(
@@ -155,6 +217,8 @@ export function invalidateReadFiles(
 
   for (const file of files) {
     delete session.readFiles[file];
+    delete session.readRanges[file];
+    delete session.fullyReadFiles[file];
   }
 }
 

@@ -6,9 +6,11 @@ import { scanDirectory } from "./scanner";
 import { searchFiles } from "./search";
 import {
   consumeTokens,
+  getReadRanges,
   getSession,
   hasReadFile,
   recordReadFile,
+  recordReadRange,
   recordSessionEvent,
 } from "./sessions";
 import type {
@@ -16,8 +18,10 @@ import type {
   ContextResult,
   FileEntry,
   MonitoringEvent,
+  RepoLineRange,
   RepoMap,
   RepoReadFile,
+  RepoReadRangeRequest,
   RepoReadRequest,
   RepoReadResult,
   RepoSearchRequest,
@@ -30,6 +34,7 @@ const encoding = getEncoding("cl100k_base");
 const MAX_CONTEXT_CANDIDATES = 50;
 const DEFAULT_SEARCH_LIMIT = 20;
 const MAX_SEARCH_LIMIT = 100;
+export const MAX_READ_RANGE_LINES = 400;
 
 function buildContextPacket(
   task: string,
@@ -78,6 +83,94 @@ function normalizeSearchLimit(limit: number | undefined): number {
   return Math.min(Math.max(Math.floor(limit), 1), MAX_SEARCH_LIMIT);
 }
 
+function mergeRanges(ranges: RepoLineRange[]): RepoLineRange[] {
+  const sorted = ranges
+    .map((range) => ({ ...range }))
+    .sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
+  const merged: RepoLineRange[] = [];
+
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+
+    if (!previous || range.startLine > previous.endLine + 1) {
+      merged.push(range);
+      continue;
+    }
+
+    previous.endLine = Math.max(previous.endLine, range.endLine);
+  }
+
+  return merged;
+}
+
+function subtractRanges(
+  requested: RepoLineRange,
+  covered: RepoLineRange[],
+): RepoLineRange[] {
+  let remaining = [requested];
+
+  for (const existing of mergeRanges(covered)) {
+    const next: RepoLineRange[] = [];
+
+    for (const range of remaining) {
+      if (existing.endLine < range.startLine || existing.startLine > range.endLine) {
+        next.push(range);
+        continue;
+      }
+
+      if (existing.startLine > range.startLine) {
+        next.push({
+          startLine: range.startLine,
+          endLine: existing.startLine - 1,
+        });
+      }
+
+      if (existing.endLine < range.endLine) {
+        next.push({
+          startLine: existing.endLine + 1,
+          endLine: range.endLine,
+        });
+      }
+    }
+
+    remaining = next;
+    if (remaining.length === 0) break;
+  }
+
+  return remaining;
+}
+
+function normalizeRequestedRange(
+  request: RepoReadRangeRequest,
+  totalLines: number,
+): RepoLineRange {
+  if (
+    !Number.isInteger(request.startLine) ||
+    !Number.isInteger(request.endLine) ||
+    request.startLine < 1 ||
+    request.endLine < request.startLine
+  ) {
+    throw new Error(
+      `Invalid line range for ${request.path}: ${request.startLine}-${request.endLine}`,
+    );
+  }
+
+  if (request.endLine - request.startLine + 1 > MAX_READ_RANGE_LINES) {
+    throw new Error(
+      `Line range for ${request.path} exceeds ${MAX_READ_RANGE_LINES} lines`,
+    );
+  }
+
+  const startLine = Math.min(request.startLine, totalLines);
+  const endLine = Math.min(request.endLine, totalLines);
+
+  return { startLine, endLine };
+}
+
+function lineSlice(lines: string[], range: RepoLineRange): string {
+  return lines.slice(range.startLine - 1, range.endLine).join("\n");
+}
+
 export async function searchRepo(
   request: RepoSearchRequest,
 ): Promise<RepoSearchResult> {
@@ -86,10 +179,19 @@ export async function searchRepo(
 
   const searchResults = await searchFiles(targetPath, request.searchTerms);
   const limit = normalizeSearchLimit(request.limit);
-  const results = searchResults.slice(0, limit).map((result) => ({
-    path: relative(targetPath, result.path),
-    score: result.score,
-  }));
+  const results = await Promise.all(
+    searchResults.slice(0, limit).map(async (result) => {
+      const fileStat = await stat(result.path);
+
+      return {
+        path: relative(targetPath, result.path),
+        score: result.score,
+        sizeBytes: fileStat.size,
+        estimatedTokens: Math.ceil(fileStat.size / 4),
+        matches: result.matches,
+      };
+    }),
+  );
 
   if (request.sessionId) {
     recordSessionEvent(request.sessionId, {
@@ -112,48 +214,70 @@ export async function readRepo(
   const targetPath = resolve(request.targetPath);
   validateSessionForRepo(request.sessionId, targetPath);
 
+  const wholeFiles = request.files ?? [];
+  const rangedFiles = request.ranges ?? [];
+
+  if (wholeFiles.length === 0 && rangedFiles.length === 0) {
+    throw new Error("repo_read requires at least one file or line range");
+  }
+
   const repoFiles = await scanDirectory(targetPath);
   const validFiles = new Set(repoFiles);
   const selectedFiles: RepoReadFile[] = [];
   const skippedFiles: SkippedFile[] = [];
+  const contentCache = new Map<
+    string,
+    { lines: string[]; totalLines: number; relativePath: string }
+  >();
+  const coverageByPath = new Map<string, RepoLineRange[]>();
 
   let selectedTokens = 0;
 
-  for (const requestedFile of request.files) {
+  const loadFile = async (requestedFile: string) => {
     const fullPath = resolve(targetPath, requestedFile);
 
     if (!validFiles.has(fullPath)) {
-      continue;
+      return undefined;
     }
 
-    const relativePath = relative(targetPath, fullPath);
+    const cached = contentCache.get(fullPath);
+    if (cached) return { fullPath, ...cached };
 
-    if (request.sessionId && hasReadFile(request.sessionId, relativePath)) {
+    const content = await readFile(fullPath, "utf8");
+    const lines = content.split(/\r?\n/);
+    const relativePath = relative(targetPath, fullPath);
+    const loaded = {
+      lines,
+      totalLines: lines.length,
+      relativePath,
+    };
+    contentCache.set(fullPath, loaded);
+    return { fullPath, ...loaded };
+  };
+
+  const processRange = async (
+    requestedFile: string,
+    explicitRange?: RepoReadRangeRequest,
+  ) => {
+    const loaded = await loadFile(requestedFile);
+    if (!loaded) return;
+
+    const { lines, totalLines, relativePath } = loaded;
+    const requestedRange = explicitRange
+      ? normalizeRequestedRange(explicitRange, totalLines)
+      : { startLine: 1, endLine: totalLines };
+    const priorCoverage =
+      coverageByPath.get(relativePath) ??
+      (request.sessionId ? getReadRanges(request.sessionId, relativePath) : []);
+    const uncovered = subtractRanges(requestedRange, priorCoverage);
+
+    if (uncovered.length === 0) {
       skippedFiles.push({
         path: relativePath,
         reason: "already_read",
         candidateTokens: 0,
-      });
-
-      recordSessionEvent(request.sessionId, {
-        type: "blocked",
-        timestamp: new Date().toISOString(),
-        action: "read",
-        files: [relativePath],
-        reason: "already_read",
-      });
-
-      continue;
-    }
-
-    const content = await readFile(fullPath, "utf8");
-    const tokens = encoding.encode(content).length;
-
-    if (selectedTokens + tokens > request.budgetTokens) {
-      skippedFiles.push({
-        path: relativePath,
-        reason: "context_budget_exceeded",
-        candidateTokens: selectedTokens + tokens,
+        startLine: requestedRange.startLine,
+        endLine: requestedRange.endLine,
       });
 
       if (request.sessionId) {
@@ -162,52 +286,109 @@ export async function readRepo(
           timestamp: new Date().toISOString(),
           action: "read",
           files: [relativePath],
-          reason: "context_budget_exceeded",
+          reason: "already_read",
         });
       }
 
-      continue;
+      return;
     }
 
-    if (request.sessionId) {
-      const consumption = consumeTokens(request.sessionId, tokens);
+    for (const range of uncovered) {
+      const content = lineSlice(lines, range);
+      const tokens = encoding.encode(content).length;
 
-      if (!consumption.accepted) {
+      if (selectedTokens + tokens > request.budgetTokens) {
         skippedFiles.push({
           path: relativePath,
           reason: "context_budget_exceeded",
-          candidateTokens: consumption.usedTokens + tokens,
+          candidateTokens: selectedTokens + tokens,
+          startLine: range.startLine,
+          endLine: range.endLine,
         });
 
-        recordSessionEvent(request.sessionId, {
-          type: "blocked",
-          timestamp: new Date().toISOString(),
-          action: "read",
-          files: [relativePath],
-          reason: "context_budget_exceeded",
-        });
+        if (request.sessionId) {
+          recordSessionEvent(request.sessionId, {
+            type: "blocked",
+            timestamp: new Date().toISOString(),
+            action: "read",
+            files: [relativePath],
+            reason: "context_budget_exceeded",
+          });
+        }
 
         continue;
       }
-    }
 
-    selectedFiles.push({
-      path: relativePath,
-      content,
-      tokens,
-    });
+      if (request.sessionId) {
+        const consumption = consumeTokens(request.sessionId, tokens);
 
-    if (request.sessionId) {
-      recordReadFile(request.sessionId, relativePath, tokens);
-      recordSessionEvent(request.sessionId, {
-        type: "read",
-        timestamp: new Date().toISOString(),
-        files: [relativePath],
+        if (!consumption.accepted) {
+          skippedFiles.push({
+            path: relativePath,
+            reason: "context_budget_exceeded",
+            candidateTokens: consumption.usedTokens + tokens,
+            startLine: range.startLine,
+            endLine: range.endLine,
+          });
+
+          recordSessionEvent(request.sessionId, {
+            type: "blocked",
+            timestamp: new Date().toISOString(),
+            action: "read",
+            files: [relativePath],
+            reason: "context_budget_exceeded",
+          });
+
+          continue;
+        }
+      }
+
+      selectedFiles.push({
+        path: relativePath,
+        content,
         tokens,
+        startLine: range.startLine,
+        endLine: range.endLine,
+        totalLines,
+        complete: range.startLine === 1 && range.endLine === totalLines,
       });
-    }
 
-    selectedTokens += tokens;
+      coverageByPath.set(
+        relativePath,
+        mergeRanges([
+          ...priorCoverage,
+          ...(coverageByPath.get(relativePath) ?? []),
+          range,
+        ]),
+      );
+
+      if (request.sessionId) {
+        recordReadRange(
+          request.sessionId,
+          relativePath,
+          range,
+          tokens,
+          totalLines,
+        );
+        recordSessionEvent(request.sessionId, {
+          type: "read",
+          timestamp: new Date().toISOString(),
+          files: [relativePath],
+          tokens,
+          ranges: [{ path: relativePath, ...range }],
+        });
+      }
+
+      selectedTokens += tokens;
+    }
+  };
+
+  for (const requestedFile of wholeFiles) {
+    await processRange(requestedFile);
+  }
+
+  for (const range of rangedFiles) {
+    await processRange(range.path, range);
   }
 
   const updatedSession = request.sessionId
@@ -266,6 +447,7 @@ export async function buildContext(
       ?.map((path, index) => ({
         path: resolve(targetPath, path),
         score: request.fileHints!.length - index,
+        matches: [],
       }))
       .filter((result) => validFilePaths.has(result.path)) ?? [];
 
@@ -281,6 +463,7 @@ export async function buildContext(
     path: string;
     content: string;
     sourceTokens: number;
+    totalLines: number;
   }[] = [];
 
   for (const result of searchResults.slice(0, MAX_CONTEXT_CANDIDATES)) {
@@ -317,6 +500,7 @@ export async function buildContext(
         path: relativePath,
         content,
         sourceTokens,
+        totalLines: content.split(/\r?\n/).length,
       },
     ];
 
@@ -340,6 +524,7 @@ export async function buildContext(
       path: relativePath,
       content,
       sourceTokens,
+      totalLines: content.split(/\r?\n/).length,
     });
     selectedFiles.push({
       ...fileEntry,
@@ -376,12 +561,20 @@ export async function buildContext(
     }
 
     for (const file of selectedContextFiles) {
-      recordReadFile(request.sessionId, file.path, file.sourceTokens);
+      recordReadFile(
+        request.sessionId,
+        file.path,
+        file.sourceTokens,
+        file.totalLines,
+      );
       recordSessionEvent(request.sessionId, {
         type: "read",
         timestamp: new Date().toISOString(),
         files: [file.path],
         tokens: file.sourceTokens,
+        ranges: [
+          { path: file.path, startLine: 1, endLine: file.totalLines },
+        ],
       });
     }
   }
@@ -419,6 +612,7 @@ export async function buildContext(
       searchResults: searchResults.map((result) => ({
         path: relative(targetPath, result.path),
         score: result.score,
+        matches: result.matches,
       })),
       selectedFiles: selectedFiles.map((file) => file.path),
       skippedFiles,
@@ -437,7 +631,11 @@ export async function buildContext(
     targetPath,
     files,
     fileEntries,
-    searchResults,
+    searchResults: searchResults.map((result) => ({
+      path: relative(targetPath, result.path),
+      score: result.score,
+      matches: result.matches,
+    })),
     selectedFiles,
     skippedFiles,
     contextPacket,

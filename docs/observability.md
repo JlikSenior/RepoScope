@@ -28,6 +28,22 @@ The report includes:
 
 This is intended for continuous real-world observation when exact paired baseline tasks are not available. Different tasks have different complexity, so trends should not be treated as controlled A/B evidence.
 
+## Tool latency
+
+RepoScope records end-to-end latency for `repo_session_start`, `repo_search`, `repo_read`, and `repo_context`.
+
+The reported tool duration is intended to approximate the time the Agent waits for the RepoScope MCP handler. It includes:
+
+- active-session recovery when a previous MCP process must be restored,
+- repository scanning and ripgrep work performed by the tool,
+- source reading and token accounting,
+- response construction and tracked response-token accounting,
+- active-session checkpoint persistence performed before the tool call returns.
+
+Scanner and ripgrep timings remain available as component attribution inside the latency report. The difference between total tool latency and those measured components includes other RepoScope processing such as file reads, tokenization, response construction, recovery, and checkpoint persistence.
+
+Latency does not include model inference time, Agent reasoning time, MCP transport time after the handler returns, or unrelated Cursor/provider work.
+
 ## Repository baseline audit
 
 `wholeRepoTokens` is a fast estimate, not an exact tokenizer result and not a provider billing number. It is computed as:

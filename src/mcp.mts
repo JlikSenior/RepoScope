@@ -9,8 +9,8 @@ import {
   persistSessionCheckpoint,
   removeSessionCheckpoint,
 } from "./active-session.js";
+import { buildRangeAwareContext } from "./context.js";
 import {
-  buildContext,
   MAX_READ_RANGE_LINES,
   readRepo,
   searchRepo,
@@ -48,7 +48,7 @@ async function recoverSessionIfNeeded(sessionId: string | undefined): Promise<vo
   } catch (error) {
     console.error(
       "RepoScope active session recovery failed:",
-      error instanceof Error ? error.message : error,
+      error instanceof Error ? (error as Error).message : error,
     );
   }
 }
@@ -133,7 +133,7 @@ export function createRepoScopeServer(): McpServer {
     "repo_context",
     {
       description:
-        "Build a minimal code context packet for a task within a token budget. Prefer repo_search plus ranged repo_read for large files.",
+        "Build a minimal range-aware code context packet for a task within a token budget. Search-selected large files are delivered as bounded match-centered fragments; expand with ranged repo_read only when needed.",
       inputSchema: z.object({
         targetPath: z.string(),
         task: z.string(),
@@ -152,7 +152,7 @@ export function createRepoScopeServer(): McpServer {
       sessionId,
     }) =>
       measuredTool("repo_context", () => sessionId, async () => {
-        const result = await buildContext({
+        const result = await buildRangeAwareContext({
           targetPath,
           task,
           searchTerms,

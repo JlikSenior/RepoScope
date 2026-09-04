@@ -1,7 +1,7 @@
 import { relative } from "node:path";
 
 import { parseCliArgs } from "./cli";
-import { buildContext } from "./core";
+import { buildRangeAwareContext } from "./context";
 import {
   appendMonitoringEvent,
   readMonitoringEvents,
@@ -20,7 +20,7 @@ async function main() {
 
   console.log(`Scanning: ${targetPath}`);
 
-  const coreResult = await buildContext(request);
+  const coreResult = await buildRangeAwareContext(request);
   const state = await ensureProjectState(targetPath);
   const fileEntries = coreResult.fileEntries;
 

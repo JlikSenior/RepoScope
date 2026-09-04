@@ -21,6 +21,8 @@ type ActiveSessionSnapshot = {
   session: TaskSession;
 };
 
+const checkpointWrites = new Map<string, Promise<string>>();
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -71,9 +73,9 @@ async function cleanupPaths(...paths: string[]): Promise<void> {
   await Promise.all(paths.map((path) => rm(path, { force: true })));
 }
 
-export async function persistSessionCheckpoint(
+async function writeCheckpoint(
   session: TaskSession,
-  options: StatePathOptions = {},
+  options: StatePathOptions,
 ): Promise<string> {
   const paths = await ensureProjectState(session.targetPath, options);
   const snapshotPath = join(paths.activeSessionsDir, `${session.id}.json`);
@@ -95,10 +97,32 @@ export async function persistSessionCheckpoint(
   return snapshotPath;
 }
 
+export async function persistSessionCheckpoint(
+  session: TaskSession,
+  options: StatePathOptions = {},
+): Promise<string> {
+  const previous = checkpointWrites.get(session.id);
+  const current = (previous ? previous.catch(() => undefined) : Promise.resolve())
+    .then(() => writeCheckpoint(session, options));
+
+  checkpointWrites.set(session.id, current);
+
+  try {
+    return await current;
+  } finally {
+    if (checkpointWrites.get(session.id) === current) {
+      checkpointWrites.delete(session.id);
+    }
+  }
+}
+
 export async function removeSessionCheckpoint(
   session: Pick<TaskSession, "id" | "targetPath">,
   options: StatePathOptions = {},
 ): Promise<void> {
+  const pending = checkpointWrites.get(session.id);
+  if (pending) await pending.catch(() => undefined);
+
   const paths = await getProjectStatePaths(session.targetPath, options);
   await cleanupPaths(
     join(paths.activeSessionsDir, `${session.id}.json`),
@@ -110,6 +134,9 @@ export async function loadActiveSessionCheckpoint(
   sessionId: string,
   options: StatePathOptions = {},
 ): Promise<TaskSession | undefined> {
+  const pending = checkpointWrites.get(sessionId);
+  if (pending) await pending.catch(() => undefined);
+
   const stateRoot = getStateRootPath(options);
   const locatorPath = join(stateRoot, "active", `${sessionId}.json`);
 

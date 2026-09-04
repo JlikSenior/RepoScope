@@ -28,6 +28,30 @@ The report includes:
 
 This is intended for continuous real-world observation when exact paired baseline tasks are not available. Different tasks have different complexity, so trends should not be treated as controlled A/B evidence.
 
+## Search quality vs localization quality
+
+RepoScope keeps two related metrics separate so the historical `repo_search` measurement does not silently change meaning.
+
+`searchQuality` is the original metric. It measures only explicit `repo_search` calls and remains useful for answering questions such as:
+
+- how many explicit search results were eventually read,
+- whether files that were read had appeared in explicit search before their first read,
+- the best explicit-search rank of files that were later read,
+- whether the Agent repeated effectively identical explicit searches.
+
+`localizationQuality` is the preferred broader metric for new sessions. It measures repository localization performed by both:
+
+- explicit `repo_search`, and
+- internal search performed by `repo_context` when search terms, rather than explicit file hints, determine candidate files.
+
+Explicit `fileHints` do not count as search localization because the file was already supplied directly.
+
+A file receives localization credit only if it appeared in a localization result before the file's first read. Later searches cannot retroactively claim credit.
+
+`localizationQuality` also reports separate `repoSearchCount` and `repoContextCount`, plus combined conversion, coverage, best-rank, Top-1/3/5 hit rates, and repeated-localization rate. Repeated localization normalizes term case, order, whitespace, and duplicates across both tool sources, so a `repo_search` followed by a `repo_context` that re-runs the same effective query is observable rather than hidden.
+
+Older persisted sessions do not contain localization events. They remain readable, but are excluded from localization-quality averages instead of being treated as zero-quality samples. Their existing `searchQuality` metrics remain unchanged.
+
 ## Tool latency
 
 RepoScope records end-to-end latency for `repo_session_start`, `repo_search`, `repo_read`, and `repo_context`.

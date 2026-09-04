@@ -6,11 +6,12 @@ import {
   installCursorIntegration,
   type CursorInstallScope,
 } from "./cursor-setup.mjs";
+import { buildDoctorReport } from "./doctor.js";
 import { buildRepoStats } from "./repo-stats.js";
 import { buildProjectSessionHistoryReport } from "./session-history.js";
 
 function printHelp(): void {
-  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start the stdio MCP server\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
+  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start the stdio MCP server\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope doctor                       Diagnose the current project and local RepoScope environment\n  reposcope doctor --project DIR         Diagnose a specific project and local RepoScope environment\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
 }
 
 function parseCursorInstallArgs(args: string[]): {
@@ -62,6 +63,11 @@ try {
     console.log("Restart Cursor or reload MCPs to pick up the changes.");
   } else if (command === "cursor-config") {
     console.log(JSON.stringify(buildCursorMcpSnippet(DEFAULT_NPX_SPEC), null, 2));
+  } else if (command === "doctor") {
+    const projectRoot = parseProjectArg(process.argv.slice(3), command);
+    const report = await buildDoctorReport(projectRoot);
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
   } else if (command === "project-report") {
     const projectRoot = parseProjectArg(process.argv.slice(3), command);
     const report = await buildProjectSessionHistoryReport(projectRoot);

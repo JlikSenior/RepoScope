@@ -89,8 +89,15 @@ async function measuredTool<T>(
   getSessionId: () => string | undefined,
   action: () => Promise<T>,
 ): Promise<T> {
-  await recoverSessionIfNeeded(getSessionId());
-  const measured = await collectToolPerformance(action);
+  const measured = await collectToolPerformance(async () => {
+    await recoverSessionIfNeeded(getSessionId());
+
+    try {
+      return await action();
+    } finally {
+      await persistActiveSessionIfPresent(getSessionId());
+    }
+  });
   const sessionId = getSessionId();
 
   if (sessionId) {
@@ -108,8 +115,6 @@ async function measuredTool<T>(
       });
     }
   }
-
-  await persistActiveSessionIfPresent(sessionId);
 
   if (measured.error !== undefined) {
     throw measured.error;

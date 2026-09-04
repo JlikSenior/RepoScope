@@ -11,6 +11,10 @@ import {
 } from "../src/scanner";
 import { searchFiles } from "../src/search";
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test("performance collection distinguishes scan cache hits and ripgrep runs", async () => {
   const root = await mkdtemp(join(tmpdir(), "reposcope-performance-"));
 
@@ -41,6 +45,23 @@ test("performance collection distinguishes scan cache hits and ripgrep runs", as
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("performance collection includes lifecycle prelude and finalizer work", async () => {
+  const measured = await collectToolPerformance(async () => {
+    await delay(25);
+
+    try {
+      await delay(25);
+      return "ok";
+    } finally {
+      await delay(25);
+    }
+  });
+
+  assert.equal(measured.error, undefined);
+  assert.equal(measured.value, "ok");
+  assert(measured.sample.durationMs >= 60);
 });
 
 test("performance collection records failed tool calls without swallowing errors", async () => {

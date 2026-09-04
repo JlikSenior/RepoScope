@@ -219,16 +219,14 @@ export async function buildRangeAwareContext(
     const content = await readFile(result.path, "utf8");
     const lines = content.split(/\r?\n/);
     const totalLines = lines.length;
-    const desiredRanges = desiredContextRanges(totalLines, result.matches);
+    const desiredRanges =
+      selectionSource === "file_hints" &&
+      totalLines > SMALL_CONTEXT_FILE_LINES &&
+      result.matches.length === 0
+        ? [{ startLine: 1, endLine: totalLines }]
+        : desiredContextRanges(totalLines, result.matches);
 
-    if (desiredRanges.length === 0) {
-      skippedFiles.push({
-        path: relativePath,
-        reason: "range_required",
-        candidateTokens: fileEntry.estimatedTokens,
-      });
-      continue;
-    }
+    if (desiredRanges.length === 0) continue;
 
     let coverage =
       coverageByPath.get(relativePath) ??

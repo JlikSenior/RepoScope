@@ -11,6 +11,8 @@ export type ProjectStatePaths = {
   projectDir: string;
   cliDir: string;
   sessionsDir: string;
+  activeSessionsDir: string;
+  activeIndexDir: string;
   metadataPath: string;
   contextPacketPath: string;
   repoMapPath: string;
@@ -24,7 +26,7 @@ export type StatePathOptions = {
   platformName?: NodeJS.Platform;
 };
 
-function stateRootFromEnvironment(options: StatePathOptions = {}): string {
+export function getStateRootPath(options: StatePathOptions = {}): string {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? homedir();
   const platformName = options.platformName ?? platform();
@@ -57,11 +59,13 @@ export async function getProjectStatePaths(
   options: StatePathOptions = {},
 ): Promise<ProjectStatePaths> {
   const canonicalPath = await realpath(resolve(targetPath));
-  const stateRoot = stateRootFromEnvironment(options);
+  const stateRoot = getStateRootPath(options);
   const projectId = projectIdForPath(canonicalPath);
   const projectDir = join(stateRoot, "projects", projectId);
   const cliDir = join(projectDir, "cli");
   const sessionsDir = join(projectDir, "sessions");
+  const activeSessionsDir = join(projectDir, "active");
+  const activeIndexDir = join(stateRoot, "active");
 
   return {
     stateRoot,
@@ -69,6 +73,8 @@ export async function getProjectStatePaths(
     projectDir,
     cliDir,
     sessionsDir,
+    activeSessionsDir,
+    activeIndexDir,
     metadataPath: join(projectDir, "project.json"),
     contextPacketPath: join(cliDir, OUTPUT_FILES.contextPacket),
     repoMapPath: join(cliDir, OUTPUT_FILES.repoMap),
@@ -87,6 +93,8 @@ export async function ensureProjectState(
   await Promise.all([
     mkdir(paths.cliDir, { recursive: true }),
     mkdir(paths.sessionsDir, { recursive: true }),
+    mkdir(paths.activeSessionsDir, { recursive: true }),
+    mkdir(paths.activeIndexDir, { recursive: true }),
   ]);
   await writeFile(
     paths.metadataPath,

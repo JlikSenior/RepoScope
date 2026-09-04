@@ -118,7 +118,7 @@ test("a partial read does not block context around a distant later match", async
 
     const metrics = summarizeSession(
       // startSession guarantees the active record exists through the core calls.
-      (await import("../src/sessions")).getSession(started.sessionId)!,
+      (await import("../src/sessions.js")).getSession(started.sessionId)!,
     );
     assert.equal(metrics.sourceLinesRead, 162);
   } finally {
@@ -161,7 +161,7 @@ test("context subtracts only overlapping lines already read", async () => {
     assert.match(result.contextPacket, /large\.ts \(L301-340 of 500\)/);
     assert.doesNotMatch(result.contextPacket, /overlap_context_marker/);
 
-    const { getSession } = await import("../src/sessions");
+    const { getSession } = await import("../src/sessions.js");
     const metrics = summarizeSession(getSession(started.sessionId)!);
     assert.equal(metrics.sourceLinesRead, 81);
   } finally {

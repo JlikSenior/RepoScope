@@ -86,6 +86,16 @@ Therefore these are separate concerns:
 - `.cursor/` controls **where Cursor exposes and instructs use of RepoScope**.
 - RepoScope's user state directory controls **where runtime state is stored and isolated**.
 
+## Active session recovery
+
+Active RepoScope task sessions are checkpointed into RepoScope's local user-state directory. If Cursor reloads MCPs or the stdio RepoScope process restarts, the next tool call using the existing `sessionId` can restore the active task instead of starting from an empty in-memory session.
+
+The recoverable state includes the task budget, token usage, search/read event history, delivered-token accounting, read ranges, and guarded-write read authorization. RepoScope does **not** copy repository source contents into the checkpoint; source is still read from the repository when requested.
+
+Full active snapshots remain project-isolated under the project's RepoScope state directory. A small state-root locator maps the opaque `sessionId` to its project id so `repo_session_status` and `repo_session_finish` can recover without adding a new `targetPath` argument.
+
+Finished sessions are not recoverable as active work. `repo_session_finish` persists the existing final session report and removes the active recovery checkpoint. If a stale active checkpoint survives an interrupted finish but a final session report already exists, the final report wins and the session is not resurrected.
+
 ## Normal use
 
 After installation, restart Cursor or reload MCPs. In the project, confirm that:

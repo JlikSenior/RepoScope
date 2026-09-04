@@ -206,6 +206,23 @@ export async function buildRangeAwareContext(
 
   const selectionSource = hintedResults.length > 0 ? "file_hints" : "search";
   const searchResults = hintedResults.length > 0 ? hintedResults : termSearchResults;
+
+  if (
+    request.sessionId &&
+    selectionSource === "search" &&
+    request.searchTerms.length > 0
+  ) {
+    recordSessionEvent(request.sessionId, {
+      type: "localization",
+      timestamp: new Date().toISOString(),
+      source: "repo_context",
+      searchTerms: [...request.searchTerms],
+      resultFiles: searchResults
+        .slice(0, MAX_CONTEXT_CANDIDATES)
+        .map((result) => relative(targetPath, result.path)),
+    });
+  }
+
   const selectedFileByPath = new Map<string, SelectedFile>();
   const skippedFiles: SkippedFile[] = [];
   const fragments: ContextFragment[] = [];

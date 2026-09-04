@@ -64,6 +64,21 @@ export type ProjectSessionHistoryReport = {
       top5ReadHitRatePercent: number;
       repeatedSearchPercent: number;
     };
+    localizationQuality: {
+      localizationCount: number;
+      repoSearchCount: number;
+      repoContextCount: number;
+      uniqueLocalizationResults: number;
+      readFilesFoundByLocalization: number;
+      readFilesNotFoundByLocalization: number;
+      localizationResultReadConversionPercent: number;
+      localizationCoveragePercent: number;
+      averageBestRankOfReadFiles: number;
+      top1ReadHitRatePercent: number;
+      top3ReadHitRatePercent: number;
+      top5ReadHitRatePercent: number;
+      repeatedLocalizationPercent: number;
+    };
   };
   recentSessions: Array<{
     sessionId: string;
@@ -98,6 +113,21 @@ export type ProjectSessionHistoryReport = {
       top5ReadHitRatePercent: number;
       repeatedSearchCount: number;
       repeatedSearchPercent: number;
+    };
+    localizationQuality?: {
+      localizationCount: number;
+      repoSearchCount: number;
+      repoContextCount: number;
+      uniqueLocalizationResults: number;
+      uniqueLocalizationResultsRead: number;
+      localizationResultReadConversionPercent: number;
+      localizationCoveragePercent: number;
+      averageBestRankOfReadFiles: number;
+      top1ReadHitRatePercent: number;
+      top3ReadHitRatePercent: number;
+      top5ReadHitRatePercent: number;
+      repeatedLocalizationCount: number;
+      repeatedLocalizationPercent: number;
     };
   }>;
 };
@@ -148,6 +178,19 @@ function searchQualityValues(
     .filter(
       (report) =>
         report.metrics.searchQuality !== undefined && include(report),
+    )
+    .map(select);
+}
+
+function localizationQualityValues(
+  reports: SessionFinishReport[],
+  select: (report: SessionFinishReport) => number,
+  include: (report: SessionFinishReport) => boolean = () => true,
+): number[] {
+  return reports
+    .filter(
+      (report) =>
+        report.metrics.localizationQuality !== undefined && include(report),
     )
     .map(select);
 }
@@ -349,6 +392,100 @@ export async function buildProjectSessionHistoryReport(
           ),
         ),
       },
+      localizationQuality: {
+        localizationCount: average(
+          localizationQualityValues(
+            reports,
+            (report) => report.metrics.localizationQuality!.localizationCount,
+          ),
+        ),
+        repoSearchCount: average(
+          localizationQualityValues(
+            reports,
+            (report) => report.metrics.localizationQuality!.repoSearchCount,
+          ),
+        ),
+        repoContextCount: average(
+          localizationQualityValues(
+            reports,
+            (report) => report.metrics.localizationQuality!.repoContextCount,
+          ),
+        ),
+        uniqueLocalizationResults: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.uniqueLocalizationResults,
+          ),
+        ),
+        readFilesFoundByLocalization: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.readFilesFoundByLocalization,
+          ),
+        ),
+        readFilesNotFoundByLocalization: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.readFilesNotFoundByLocalization,
+          ),
+        ),
+        localizationResultReadConversionPercent: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!
+                .localizationResultReadConversionPercent,
+          ),
+        ),
+        localizationCoveragePercent: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.localizationCoveragePercent,
+          ),
+        ),
+        averageBestRankOfReadFiles: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.averageBestRankOfReadFiles,
+            (report) =>
+              (report.metrics.localizationQuality?.readFilesFoundByLocalization ??
+                0) > 0,
+          ),
+        ),
+        top1ReadHitRatePercent: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.top1ReadHitRatePercent,
+          ),
+        ),
+        top3ReadHitRatePercent: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.top3ReadHitRatePercent,
+          ),
+        ),
+        top5ReadHitRatePercent: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.top5ReadHitRatePercent,
+          ),
+        ),
+        repeatedLocalizationPercent: average(
+          localizationQualityValues(
+            reports,
+            (report) =>
+              report.metrics.localizationQuality!.repeatedLocalizationPercent,
+          ),
+        ),
+      },
     },
     recentSessions: reports
       .slice(-10)
@@ -402,6 +539,37 @@ export async function buildProjectSessionHistoryReport(
                 report.metrics.searchQuality.repeatedSearchCount,
               repeatedSearchPercent:
                 report.metrics.searchQuality.repeatedSearchPercent,
+            }
+          : undefined,
+        localizationQuality: report.metrics.localizationQuality
+          ? {
+              localizationCount:
+                report.metrics.localizationQuality.localizationCount,
+              repoSearchCount:
+                report.metrics.localizationQuality.repoSearchCount,
+              repoContextCount:
+                report.metrics.localizationQuality.repoContextCount,
+              uniqueLocalizationResults:
+                report.metrics.localizationQuality.uniqueLocalizationResults,
+              uniqueLocalizationResultsRead:
+                report.metrics.localizationQuality.uniqueLocalizationResultsRead,
+              localizationResultReadConversionPercent:
+                report.metrics.localizationQuality
+                  .localizationResultReadConversionPercent,
+              localizationCoveragePercent:
+                report.metrics.localizationQuality.localizationCoveragePercent,
+              averageBestRankOfReadFiles:
+                report.metrics.localizationQuality.averageBestRankOfReadFiles,
+              top1ReadHitRatePercent:
+                report.metrics.localizationQuality.top1ReadHitRatePercent,
+              top3ReadHitRatePercent:
+                report.metrics.localizationQuality.top3ReadHitRatePercent,
+              top5ReadHitRatePercent:
+                report.metrics.localizationQuality.top5ReadHitRatePercent,
+              repeatedLocalizationCount:
+                report.metrics.localizationQuality.repeatedLocalizationCount,
+              repeatedLocalizationPercent:
+                report.metrics.localizationQuality.repeatedLocalizationPercent,
             }
           : undefined,
       })),

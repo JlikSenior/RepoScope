@@ -141,6 +141,16 @@ export function recordSessionEvent(
 ): void {
   const session = getActiveSession(sessionId);
   session.events.push(event);
+
+  if (event.type === "search") {
+    session.events.push({
+      type: "localization",
+      timestamp: event.timestamp,
+      source: "repo_search",
+      searchTerms: [...event.searchTerms],
+      resultFiles: [...event.resultFiles],
+    });
+  }
 }
 
 export function recordDeliveredTokens(

@@ -5,6 +5,11 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 
 import {
+  loadActiveSessionCheckpoint,
+  persistSessionCheckpoint,
+  removeSessionCheckpoint,
+} from "./active-session.js";
+import {
   buildContext,
   MAX_READ_RANGE_LINES,
   readRepo,
@@ -22,6 +27,7 @@ import {
   finishSession,
   getSessionRecord,
   recordSessionEvent,
+  restoreActiveSession,
   startSession,
 } from "./sessions.js";
 import type { LatencyTool } from "./types.js";
@@ -33,11 +39,57 @@ import {
 
 const MAX_STATUS_LINES = 200;
 
+async function recoverSessionIfNeeded(sessionId: string | undefined): Promise<void> {
+  if (!sessionId || getSessionRecord(sessionId)) return;
+
+  try {
+    const recovered = await loadActiveSessionCheckpoint(sessionId);
+    if (recovered) restoreActiveSession(recovered);
+  } catch (error) {
+    console.error(
+      "RepoScope active session recovery failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+async function persistActiveSessionIfPresent(
+  sessionId: string | undefined,
+): Promise<void> {
+  if (!sessionId) return;
+
+  const session = getSessionRecord(sessionId);
+  if (!session || session.status !== "active") return;
+
+  try {
+    await persistSessionCheckpoint(session);
+  } catch (error) {
+    console.error(
+      "RepoScope active session checkpoint failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+async function sessionTool<T>(
+  sessionId: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  await recoverSessionIfNeeded(sessionId);
+
+  try {
+    return await action();
+  } finally {
+    await persistActiveSessionIfPresent(sessionId);
+  }
+}
+
 async function measuredTool<T>(
   tool: LatencyTool,
   getSessionId: () => string | undefined,
   action: () => Promise<T>,
 ): Promise<T> {
+  await recoverSessionIfNeeded(getSessionId());
   const measured = await collectToolPerformance(action);
   const sessionId = getSessionId();
 
@@ -56,6 +108,8 @@ async function measuredTool<T>(
       });
     }
   }
+
+  await persistActiveSessionIfPresent(sessionId);
 
   if (measured.error !== undefined) {
     throw measured.error;
@@ -237,21 +291,22 @@ export function createRepoScopeServer(): McpServer {
         sessionId: z.string(),
       }),
     },
-    async ({ targetPath, sessionId }) => {
-      const result = await getSessionRepoStatus({ targetPath, sessionId });
-      const visibleLines = result.lines.slice(0, MAX_STATUS_LINES);
-      const parts = visibleLines.length > 0 ? [...visibleLines] : ["CLEAN"];
+    async ({ targetPath, sessionId }) =>
+      sessionTool(sessionId, async () => {
+        const result = await getSessionRepoStatus({ targetPath, sessionId });
+        const visibleLines = result.lines.slice(0, MAX_STATUS_LINES);
+        const parts = visibleLines.length > 0 ? [...visibleLines] : ["CLEAN"];
 
-      if (result.lines.length > visibleLines.length) {
-        parts.push(`TRUNCATED ${result.lines.length - visibleLines.length}`);
-      }
+        if (result.lines.length > visibleLines.length) {
+          parts.push(`TRUNCATED ${result.lines.length - visibleLines.length}`);
+        }
 
-      return createTextResponse(
-        "repo_status",
-        parts.join("\n"),
-        sessionId,
-      );
-    },
+        return createTextResponse(
+          "repo_status",
+          parts.join("\n"),
+          sessionId,
+        );
+      }),
   );
 
   server.registerTool(
@@ -265,19 +320,20 @@ export function createRepoScopeServer(): McpServer {
         sessionId: z.string(),
       }),
     },
-    async ({ targetPath, patch, sessionId }) => {
-      const result = await applySessionPatch({
-        targetPath,
-        patch,
-        sessionId,
-      });
+    async ({ targetPath, patch, sessionId }) =>
+      sessionTool(sessionId, async () => {
+        const result = await applySessionPatch({
+          targetPath,
+          patch,
+          sessionId,
+        });
 
-      return createTextResponse(
-        "repo_apply_patch",
-        `APPLIED\n${result.files.join("\n")}`,
-        sessionId,
-      );
-    },
+        return createTextResponse(
+          "repo_apply_patch",
+          `APPLIED\n${result.files.join("\n")}`,
+          sessionId,
+        );
+      }),
   );
 
   server.registerTool(
@@ -291,20 +347,21 @@ export function createRepoScopeServer(): McpServer {
         sessionId: z.string(),
       }),
     },
-    async ({ targetPath, budgetTokens, sessionId }) => {
-      const result = await getSessionRepoDiff({
-        targetPath,
-        budgetTokens,
-        sessionId,
-      });
-      const header = result.truncated ? "DIFF_TRUNCATED" : "DIFF";
+    async ({ targetPath, budgetTokens, sessionId }) =>
+      sessionTool(sessionId, async () => {
+        const result = await getSessionRepoDiff({
+          targetPath,
+          budgetTokens,
+          sessionId,
+        });
+        const header = result.truncated ? "DIFF_TRUNCATED" : "DIFF";
 
-      return createTextResponse(
-        "repo_diff",
-        result.diff ? `${header}\n${result.diff}` : "NO_DIFF",
-        sessionId,
-      );
-    },
+        return createTextResponse(
+          "repo_diff",
+          result.diff ? `${header}\n${result.diff}` : "NO_DIFF",
+          sessionId,
+        );
+      }),
   );
 
   server.registerTool(
@@ -317,15 +374,16 @@ export function createRepoScopeServer(): McpServer {
         sessionId: z.string(),
       }),
     },
-    async ({ targetPath, sessionId }) => {
-      const commands = await listAllowedCommands({ targetPath, sessionId });
+    async ({ targetPath, sessionId }) =>
+      sessionTool(sessionId, async () => {
+        const commands = await listAllowedCommands({ targetPath, sessionId });
 
-      return createTextResponse(
-        "repo_commands",
-        commands.length ? `COMMANDS\n${commands.join("\n")}` : "NO_COMMANDS",
-        sessionId,
-      );
-    },
+        return createTextResponse(
+          "repo_commands",
+          commands.length ? `COMMANDS\n${commands.join("\n")}` : "NO_COMMANDS",
+          sessionId,
+        );
+      }),
   );
 
   server.registerTool(
@@ -341,23 +399,24 @@ export function createRepoScopeServer(): McpServer {
         sessionId: z.string(),
       }),
     },
-    async ({ targetPath, command, budgetTokens, timeoutMs, sessionId }) => {
-      const result = await runAllowedCommand({
-        targetPath,
-        command,
-        budgetTokens,
-        timeoutMs,
-        sessionId,
-      });
+    async ({ targetPath, command, budgetTokens, timeoutMs, sessionId }) =>
+      sessionTool(sessionId, async () => {
+        const result = await runAllowedCommand({
+          targetPath,
+          command,
+          budgetTokens,
+          timeoutMs,
+          sessionId,
+        });
 
-      return createTextResponse(
-        "repo_run",
-        result.truncated
-          ? `OUTPUT_TRUNCATED\n${result.output}`
-          : result.output,
-        sessionId,
-      );
-    },
+        return createTextResponse(
+          "repo_run",
+          result.truncated
+            ? `OUTPUT_TRUNCATED\n${result.output}`
+            : result.output,
+          sessionId,
+        );
+      }),
   );
 
   server.registerTool(
@@ -403,14 +462,33 @@ export function createRepoScopeServer(): McpServer {
       }),
     },
     async ({ sessionId, outcome, note }) => {
+      await recoverSessionIfNeeded(sessionId);
       const session = finishSession(sessionId, outcome, note);
       const report = buildSessionFinishReport(session);
+
+      try {
+        await persistSessionCheckpoint(session);
+      } catch (error) {
+        console.error(
+          "RepoScope finished session checkpoint failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
 
       try {
         await persistSessionReport(session, report);
       } catch (error) {
         console.error(
           "RepoScope session history persistence failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+
+      try {
+        await removeSessionCheckpoint(session);
+      } catch (error) {
+        console.error(
+          "RepoScope active session cleanup failed:",
           error instanceof Error ? error.message : error,
         );
       }
@@ -433,6 +511,7 @@ export function createRepoScopeServer(): McpServer {
       }),
     },
     async ({ sessionId }) => {
+      await recoverSessionIfNeeded(sessionId);
       const session = getSessionRecord(sessionId);
 
       if (!session) {

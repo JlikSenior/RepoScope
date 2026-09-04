@@ -104,6 +104,19 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+function cursorServerMatches(actual: JsonObject): boolean {
+  const expected = buildCursorMcpServer(DEFAULT_NPX_SPEC);
+  const args = actual.args;
+
+  return (
+    actual.type === expected.type &&
+    actual.command === expected.command &&
+    Array.isArray(args) &&
+    args.length === expected.args.length &&
+    args.every((value, index) => value === expected.args[index])
+  );
+}
+
 async function checkCursorConfig(projectRoot: string): Promise<DoctorCheck> {
   const path = join(projectRoot, ".cursor", "mcp.json");
 
@@ -156,7 +169,7 @@ async function checkCursorConfig(projectRoot: string): Promise<DoctorCheck> {
     );
   }
 
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+  if (!cursorServerMatches(actual)) {
     return check(
       "cursor-mcp",
       "warning",
@@ -302,6 +315,10 @@ export async function buildDoctorReport(
     );
   } else {
     try {
+      const ancestorStat = await stat(writableAncestor);
+      if (!ancestorStat.isDirectory()) {
+        throw new Error("nearest existing state path is not a directory");
+      }
       await access(writableAncestor, constants.W_OK);
       checks.push(
         check("state-root", "ok", "RepoScope state location is writable.", {
@@ -309,11 +326,12 @@ export async function buildDoctorReport(
           writableAncestor,
         }),
       );
-    } catch {
+    } catch (error) {
       checks.push(
-        check("state-root", "error", "RepoScope state location is not writable.", {
+        check("state-root", "error", "RepoScope state location is not writable as a directory.", {
           stateRoot,
           writableAncestor,
+          error: error instanceof Error ? error.message : String(error),
         }),
       );
     }

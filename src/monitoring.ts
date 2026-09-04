@@ -1,5 +1,6 @@
 import { appendFile, readFile } from "node:fs/promises";
 
+import { summarizeLocalizationQuality } from "./localization-quality";
 import type {
   LatencyTool,
   MonitoringEvent,
@@ -310,6 +311,7 @@ export function summarizeSession(session: TaskSession): SessionMetrics {
     toolOverheadPercent: Number(toolOverheadPercent.toFixed(2)),
     latency: summarizeLatency(session),
     searchQuality: summarizeSearchQuality(session),
+    localizationQuality: summarizeLocalizationQuality(session),
   };
 }
 

@@ -76,6 +76,18 @@ export function getSessionRecord(sessionId: string): TaskSession | undefined {
   return sessions.get(sessionId);
 }
 
+export function restoreActiveSession(session: TaskSession): TaskSession {
+  if (session.status !== "active") {
+    throw new Error("Only active sessions can be restored");
+  }
+
+  const existing = sessions.get(session.id);
+  if (existing) return existing;
+
+  sessions.set(session.id, session);
+  return session;
+}
+
 export function getSession(sessionId: string): TaskSession | undefined {
   const session = sessions.get(sessionId);
 

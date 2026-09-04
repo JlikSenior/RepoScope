@@ -24,11 +24,23 @@ For large files, the Agent should start with a narrow `repo_read.ranges` window 
 
 Whole-file `repo_read.files` remains available for small files and compatibility.
 
+## Range-aware `repo_context`
+
+`repo_context` also uses line-range delivery for the normal search-selected path.
+
+- Files up to 200 lines remain whole-file context.
+- Larger files are represented by match-centered windows with a default radius of 40 lines, normally about 81 lines per isolated match.
+- Nearby or overlapping match windows are merged before delivery.
+- The packet labels each fragment with its source range, for example `L260-340 of 500`.
+- Explicit `fileHints` remain backward-compatible: a large explicitly hinted file with no usable search match can still be delivered whole when the budget allows it.
+
+This makes `repo_context` suitable for bounded task packets without turning a single hit in a large file into an automatic whole-file delivery.
+
 ## Range deduplication
 
 Within a task session, RepoScope tracks delivered line coverage per file. If a later request overlaps an earlier range, only unseen lines are delivered and charged to the source-token budget.
 
-A partial read also prevents `repo_context` from later redelivering the same file wholesale. If more of that file is needed, the Agent should request another explicit range.
+Deduplication is cross-tool. A partial `repo_read` no longer causes `repo_context` to treat the entire file as exhausted: if a later search points to a distant unread region in the same file, `repo_context` can deliver that new range while still suppressing genuinely overlapping lines.
 
 Session metrics include `sourceLinesRead` in addition to source-token and file counts.
 

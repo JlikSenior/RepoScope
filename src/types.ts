@@ -239,6 +239,27 @@ export type SearchQualityMetrics = {
   repeatedSearchPercent: number;
 };
 
+export type LocalizationSource = "repo_search" | "repo_context";
+
+export type LocalizationQualityMetrics = {
+  localizationCount: number;
+  repoSearchCount: number;
+  repoContextCount: number;
+  uniqueLocalizationResults: number;
+  uniqueLocalizationResultsRead: number;
+  localizationResultReadConversionPercent: number;
+  uniqueFilesRead: number;
+  readFilesFoundByLocalization: number;
+  readFilesNotFoundByLocalization: number;
+  localizationCoveragePercent: number;
+  averageBestRankOfReadFiles: number;
+  top1ReadHitRatePercent: number;
+  top3ReadHitRatePercent: number;
+  top5ReadHitRatePercent: number;
+  repeatedLocalizationCount: number;
+  repeatedLocalizationPercent: number;
+};
+
 export type TaskSession = {
   id: string;
   targetPath: string;
@@ -277,6 +298,13 @@ export type SessionEvent =
   | {
       type: "search";
       timestamp: string;
+      searchTerms: string[];
+      resultFiles: string[];
+    }
+  | {
+      type: "localization";
+      timestamp: string;
+      source: LocalizationSource;
       searchTerms: string[];
       resultFiles: string[];
     }
@@ -360,6 +388,7 @@ export type SessionMetrics = {
   utilizationPercent: number;
   latency?: SessionLatencyMetrics;
   searchQuality?: SearchQualityMetrics;
+  localizationQuality?: LocalizationQualityMetrics;
 };
 
 export type SessionFinishReport = {

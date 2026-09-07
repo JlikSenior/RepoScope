@@ -17,3 +17,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm install
       - run: npm run check
+
+  windows-no-rg:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Verify RepoScope without ripgrep
+        run: npx tsx --test tests/ripgrep-fallback.test.ts tests/mcp-no-rg.test.mts

@@ -6,12 +6,14 @@ import { promisify } from "node:util";
 
 import { OUTPUT_FILES } from "./output";
 import { recordScanPerformance } from "./performance";
+import { executeRipgrep } from "./ripgrep";
 
 const execFileAsync = promisify(execFile);
 
 const MAX_AI_FILE_SIZE_BYTES = 1024 * 1024;
 const STAT_BATCH_SIZE = 128;
 const SCAN_CACHE_TTL_MS = 15_000;
+const FILE_LIST_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
 
 const IGNORED_FILES = new Set([
   OUTPUT_FILES.repoMap,
@@ -97,22 +99,46 @@ export async function getScannedFileEntry(
   }
 }
 
+async function listFilesWithGit(targetPath: string): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-files", "-co", "--exclude-standard", "-z"],
+      {
+        cwd: targetPath,
+        maxBuffer: FILE_LIST_MAX_BUFFER_BYTES,
+      },
+    );
+
+    return stdout
+      .split("\0")
+      .filter(Boolean)
+      .map((file) => resolve(targetPath, file));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `ripgrep is unavailable and RepoScope's Git file-list fallback failed: ${message}`,
+    );
+  }
+}
+
 async function performDirectoryScan(
   targetPath: string,
 ): Promise<ScannedFileEntry[]> {
-  const { stdout } = await execFileAsync(
-    "rg",
+  const ripgrep = await executeRipgrep(
     ["--files", "--hidden", "-g", "!.git", targetPath],
-    { maxBuffer: 50 * 1024 * 1024 },
+    { maxBuffer: FILE_LIST_MAX_BUFFER_BYTES },
   );
 
-  const candidates = stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((file) => resolve(file))
-    .filter(passesStaticAiReadableRules);
+  const listedFiles = ripgrep.available
+    ? ripgrep.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((file) => resolve(file))
+    : await listFilesWithGit(targetPath);
 
+  const candidates = listedFiles.filter(passesStaticAiReadableRules);
   const entries: ScannedFileEntry[] = [];
 
   for (let index = 0; index < candidates.length; index += STAT_BATCH_SIZE) {

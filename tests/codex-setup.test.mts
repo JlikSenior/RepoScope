@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -88,6 +88,7 @@ test("Cursor and Codex adapters share the same hard-bound MCP launch", async () 
   const project = await mkdtemp(join(tmpdir(), "reposcope-agent-adapters-"));
 
   try {
+    const canonicalProject = await realpath(project);
     const cursor = await installAgentIntegration("cursor", {
       projectRoot: project,
       packageRoot: process.cwd(),
@@ -95,12 +96,12 @@ test("Cursor and Codex adapters share the same hard-bound MCP launch", async () 
     const codex = await installAgentIntegration("codex", {
       projectRoot: project,
     });
-    const launch = buildMcpLaunchSpec(DEFAULT_NPX_SPEC, project);
+    const launch = buildMcpLaunchSpec(DEFAULT_NPX_SPEC, canonicalProject);
 
     assert.equal(cursor.agent, "cursor");
     assert.equal(codex.agent, "codex");
-    assert.equal(cursor.projectRoot, project);
-    assert.equal(codex.projectRoot, project);
+    assert.equal(cursor.projectRoot, canonicalProject);
+    assert.equal(codex.projectRoot, canonicalProject);
 
     const cursorConfig = JSON.parse(
       await readFile(join(project, ".cursor", "mcp.json"), "utf8"),
@@ -112,8 +113,8 @@ test("Cursor and Codex adapters share the same hard-bound MCP launch", async () 
     const expectedArgs = launch.args.map((value) => JSON.stringify(value)).join(", ");
     assert.match(codexConfig, new RegExp(`command = ${JSON.stringify(launch.command)}`));
     assert(codexConfig.includes(`args = [${expectedArgs}]`));
-    assert.deepEqual(codex.configPaths, [join(project, ".codex", "config.toml")]);
-    assert.deepEqual(codex.guidancePaths, [join(project, "AGENTS.md")]);
+    assert.deepEqual(codex.configPaths, [join(canonicalProject, ".codex", "config.toml")]);
+    assert.deepEqual(codex.guidancePaths, [join(canonicalProject, "AGENTS.md")]);
   } finally {
     await rm(project, { recursive: true, force: true });
   }

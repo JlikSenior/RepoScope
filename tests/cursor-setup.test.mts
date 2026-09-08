@@ -48,8 +48,13 @@ test("Cursor installer defaults to project scope and installs MCP, skills, and a
     });
     assert.deepEqual(
       installed.mcpServers.reposcope,
-      buildCursorMcpServer(DEFAULT_NPX_SPEC),
+      buildCursorMcpServer(DEFAULT_NPX_SPEC, project),
     );
+    assert.deepEqual(installed.mcpServers.reposcope.args.slice(-3), [
+      "mcp",
+      "--project",
+      project,
+    ]);
     assert.equal(installed.custom, true);
     assert.equal(result.skillPaths.length, 2);
     assert.equal(
@@ -83,6 +88,42 @@ test("Cursor installer defaults to project scope and installs MCP, skills, and a
       readFile(join(home, ".agents", "skills", "reposcope", "SKILL.md"), "utf8"),
       /ENOENT/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("same-named projects install distinct MCP startup identities", async () => {
+  const root = await mkdtemp(join(tmpdir(), "reposcope-cursor-isolation-"));
+  const projectA = join(root, "owner-a", "same-name");
+  const projectB = join(root, "owner-b", "same-name");
+
+  try {
+    await mkdir(projectA, { recursive: true });
+    await mkdir(projectB, { recursive: true });
+
+    await installCursorIntegration({
+      projectRoot: projectA,
+      packageRoot: process.cwd(),
+    });
+    await installCursorIntegration({
+      projectRoot: projectB,
+      packageRoot: process.cwd(),
+    });
+
+    const configA = JSON.parse(
+      await readFile(join(projectA, ".cursor", "mcp.json"), "utf8"),
+    );
+    const configB = JSON.parse(
+      await readFile(join(projectB, ".cursor", "mcp.json"), "utf8"),
+    );
+
+    assert.notDeepEqual(
+      configA.mcpServers.reposcope.args,
+      configB.mcpServers.reposcope.args,
+    );
+    assert.equal(configA.mcpServers.reposcope.args.at(-1), projectA);
+    assert.equal(configB.mcpServers.reposcope.args.at(-1), projectB);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

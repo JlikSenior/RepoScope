@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 import { OUTPUT_FILES } from "./output";
 import { recordScanPerformance } from "./performance";
+import { assertProjectTargetAllowed } from "./project-scope";
 import { executeRipgrep } from "./ripgrep";
 
 const execFileAsync = promisify(execFile);
@@ -162,6 +163,8 @@ export async function scanDirectoryEntries(
 ): Promise<ScannedFileEntry[]> {
   const startedAt = performance.now();
   const targetPath = resolve(directoryPath);
+  assertProjectTargetAllowed(targetPath);
+
   const now = Date.now();
   const cached = scanCache.get(targetPath);
 

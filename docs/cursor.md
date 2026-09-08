@@ -25,7 +25,7 @@ By default, `cursor-install` is **project-scoped**. It writes only inside the cu
         SKILL.md
 ```
 
-The project MCP entry launches RepoScope through `npx`:
+The project MCP entry launches RepoScope through `npx` and hard-binds that MCP process to the canonical project root:
 
 ```json
 {
@@ -36,12 +36,17 @@ The project MCP entry launches RepoScope through `npx`:
       "args": [
         "-y",
         "--prefer-online",
-        "github:JlikSenior/RepoScope#main"
+        "github:JlikSenior/RepoScope#main",
+        "mcp",
+        "--project",
+        "/absolute/path/to/project"
       ]
     }
   }
 }
 ```
+
+The absolute project argument is intentional. Two workspaces with the same directory/repository name still receive different MCP startup identities because their canonical roots differ. RepoScope also enforces that bound root internally: a project-bound MCP process rejects repository scan/search/session-start requests aimed at another project.
 
 Existing project MCP servers in `.cursor/mcp.json` are preserved.
 
@@ -69,30 +74,34 @@ Global installation is available, but it is **not the default**:
 npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install --global
 ```
 
-This writes the MCP configuration to `~/.cursor/mcp.json` and the skills to `~/.agents/skills/`. It does not create the project-specific Always Apply rule.
+This writes the MCP configuration to `~/.cursor/mcp.json` and the skills to `~/.agents/skills/`. It does not create the project-specific Always Apply rule and remains unbound because one global registration may be used by multiple repositories.
 
-During testing, prefer project scope so RepoScope can be enabled or removed independently for each repository.
+During testing, prefer project scope so RepoScope can be enabled or removed independently for each repository and receives hard project binding.
 
 ## Multiple projects
 
-With project-scoped installation, each workspace has its own Cursor MCP registration, project rule, and project skills.
+With project-scoped installation, each workspace has its own Cursor MCP registration, project rule, project skills, and canonical `--project` startup argument.
 
 RepoScope runtime state is independently isolated as well. Each target repository is canonicalized and assigned a path-derived project id. RepoScope-owned diagnostic/state files are kept outside the repository in a per-project state directory.
 
-Task sessions are also bound to the repository they were created for. A `sessionId` from project A cannot be used to search/read/write project B.
+Project-scoped MCP processes no longer need the state-root-wide active-session locator index. Active checkpoints live only under the matching path-derived project directory, and bound recovery reads that directory directly. The legacy global locator remains available only for unbound/global compatibility.
+
+Task sessions are also bound to the repository they were created for. A `sessionId` from project A cannot be recovered or used by a project-bound MCP process for project B.
 
 Therefore these are separate concerns:
 
-- `.cursor/` controls **where Cursor exposes and instructs use of RepoScope**.
-- RepoScope's user state directory controls **where runtime state is stored and isolated**.
+- `.cursor/` controls **where Cursor exposes and instructs use of RepoScope** and gives each project a distinct MCP startup identity.
+- RepoScope's user state directory controls **where runtime state is stored**; project-bound active state stays within one path-derived project directory.
 
-## Active session recovery
+## Active session recovery and cleanup
 
 Active RepoScope task sessions are checkpointed into RepoScope's local user-state directory. If Cursor reloads MCPs or the stdio RepoScope process restarts, the next tool call using the existing `sessionId` can restore the active task instead of starting from an empty in-memory session.
 
 The recoverable state includes the task budget, token usage, search/read event history, delivered-token accounting, read ranges, and guarded-write read authorization. RepoScope does **not** copy repository source contents into the checkpoint; source is still read from the repository when requested.
 
-Full active snapshots remain project-isolated under the project's RepoScope state directory. A small state-root locator maps the opaque `sessionId` to its project id so `repo_session_status` and `repo_session_finish` can recover without adding a new `targetPath` argument.
+For project-bound MCP processes, full active snapshots remain under that project's RepoScope state directory and no new shared active locator is created. On startup, RepoScope also removes stale atomic temporary files older than one hour and abandoned active checkpoints older than seven days from that project only. When a stale old-format active checkpoint is removed, the matching legacy locator is removed as well.
+
+Finished session reports are not treated as temporary garbage because they feed observability and `project-report`; their retention/compaction policy is separate from active-state cleanup.
 
 Finished sessions are not recoverable as active work. `repo_session_finish` persists the existing final session report and removes the active recovery checkpoint. If a stale active checkpoint survives an interrupted finish but a final session report already exists, the final report wins and the session is not resurrected.
 
@@ -126,11 +135,13 @@ A run is contaminated if the Agent falls back to Cursor's built-in repository se
 
 ## Manual config only
 
-If you do not want the installer to modify Cursor configuration, print the config snippet instead:
+If you do not want the installer to modify Cursor configuration, print the generic unbound config snippet instead:
 
 ```bash
 npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-config
 ```
+
+For normal project use, prefer `cursor-install` because it writes the project-bound `--project` argument automatically.
 
 ## Future npm registry package
 

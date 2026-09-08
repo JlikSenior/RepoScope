@@ -19,6 +19,7 @@ npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install
 By default this command is **project-scoped**. It:
 
 - adds RepoScope to `<project>/.cursor/mcp.json`,
+- hard-binds that MCP startup command to the project's canonical absolute path,
 - installs `reposcope` and `reposcope-benchmark` under `<project>/.cursor/skills/`,
 - preserves existing project MCP servers,
 - does not modify your global Cursor configuration.
@@ -60,11 +61,19 @@ The Agent remains responsible for understanding the task, generating search term
 
 ## Local MCP server
 
-RepoScope is designed to be spawned locally over **stdio**. The packaged executable defaults to MCP mode:
+RepoScope is designed to be spawned locally over **stdio**. The packaged executable defaults to unbound MCP mode:
 
 ```bash
 npx -y --prefer-online github:JlikSenior/RepoScope#main
 ```
+
+A single-project MCP process can be hard-bound explicitly:
+
+```bash
+npx -y --prefer-online github:JlikSenior/RepoScope#main mcp --project /absolute/path/to/project
+```
+
+Project-scoped `cursor-install` writes this bound form automatically.
 
 For RepoScope development from a checkout:
 
@@ -80,9 +89,9 @@ There is no network transport required for the normal workflow.
 | Tool | Purpose |
 | --- | --- |
 | `repo_session_start` | Start a task-level source-token budget and estimate repository size |
-| `repo_search` | Search with ripgrep and return a bounded ranked result set |
-| `repo_read` | Read explicit repository files under per-call and task-level budgets |
-| `repo_context` | Build a bounded context packet while avoiding already-delivered source |
+| `repo_search` | Search and return a bounded ranked result set with match lines |
+| `repo_read` | Read explicit repository files/ranges under per-call and task-level budgets |
+| `repo_context` | Build a bounded range-aware context packet while avoiding already-delivered source |
 | `repo_session_status` | Inspect active or finished session metrics/history |
 | `repo_session_finish` | Finish and lock the task with a final outcome/verification report |
 
@@ -101,17 +110,21 @@ The Agent should not request the whole repository by default.
 
 ## Multi-project state isolation
 
-Cursor exposure scope and RepoScope runtime-state scope are separate concerns.
+Cursor exposure scope, MCP process identity, and RepoScope runtime-state scope are separate concerns.
 
-During testing, each project can have its own `.cursor/mcp.json` and `.cursor/skills/`, so RepoScope is only exposed in the workspaces where it was installed.
+With project-scoped installation, each workspace gets a `.cursor/mcp.json` entry containing its **canonical absolute project root** as `mcp --project <root>`. Therefore two repositories with the same folder/repository name still have different MCP startup identities when their paths differ.
 
-RepoScope runtime state is isolated independently. Each repository is canonicalized with `realpath` and assigned a stable id derived from the canonical path. RepoScope-owned diagnostic/state files live outside the target repository under a per-project directory:
+The bound RepoScope process also enforces that root internally. Repository scanning/searching and session creation for another project are rejected even if a host accidentally routes the request to the wrong RepoScope process.
+
+Runtime state is isolated independently. Each repository is canonicalized with `realpath` and assigned a stable id derived from the canonical path. RepoScope-owned diagnostic/state files live outside the target repository under a per-project directory:
 
 ```text
 <RepoScope state root>/
   projects/
     <project-id-A>/
       project.json
+      active/
+      sessions/
       cli/
         context-packet.md
         repo-map.json
@@ -131,7 +144,11 @@ Default state roots:
 
 Set `REPOSCOPE_STATE_DIR` to override the entire state root.
 
-The normal MCP path currently keeps task sessions in memory. Every session has a UUID and is bound to its canonical target repository, so a session created for one project cannot be reused against another project. Future persistent sessions/caches should use the same per-project state layout rather than writing into target repositories.
+Project-bound MCP processes recover active sessions directly from their own project state directory and do **not** create new state-root-wide active-session locator files. The shared locator path remains only for unbound/global backward compatibility.
+
+On bound MCP startup, RepoScope removes abandoned active checkpoints older than seven days and incomplete atomic temporary files older than one hour **from that project only**. Finished session reports are retained because they feed observability and `project-report`; finished-history retention/compaction is a separate policy.
+
+Every session has a UUID and is bound to its canonical target repository. A session created for project A cannot be recovered or used by a project-bound MCP process for project B.
 
 ## Agent Skills
 
@@ -247,7 +264,7 @@ This is command-selection control, **not an OS sandbox**. Approved tests/builds 
 
 ## Repository boundary
 
-RepoScope uses `rg --files`, respects normal ignore rules such as `.gitignore`, excludes common binary/resource formats and files over 1 MiB by default, and only allows explicit reads from the scanned repository set.
+RepoScope prefers `rg`/ripgrep for fast file listing and fixed-string search. If ripgrep is missing, RepoScope falls back to Git-aware file listing plus bounded Node search instead of failing to start. Normal ignore rules such as `.gitignore` remain respected, common binary/resource formats are excluded, files over 1 MiB are excluded by default, and explicit reads are restricted to the scanner-approved repository set.
 
 ## Packaging
 
@@ -268,7 +285,7 @@ Requirements:
 - Node.js 20+
 - npm
 - Git
-- `ripgrep` (`rg`) on `PATH`
+- `ripgrep` (`rg`) is optional but recommended for faster large-repository search
 
 Run the full validation suite:
 
@@ -276,13 +293,13 @@ Run the full validation suite:
 npm run check
 ```
 
-The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, per-project state isolation, Cursor installer tests, compiled-package MCP runtime checks, Pilot checks, and a real stdio MCP lifecycle test.
+The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, hard per-project isolation, Cursor installer tests, compiled-package MCP runtime checks, Windows smoke coverage, Pilot checks, and real stdio MCP lifecycle tests.
 
 ## Current development priority
 
 The MVP has enough capability to run real coding experiments. The priority is evidence and usability rather than feature count:
 
-1. make local-Agent installation frictionless,
+1. keep local-Agent installation and multi-project use reliable,
 2. run paired baseline vs RepoScope tasks on real repositories,
 3. measure verified success and context cost together,
 4. improve localization/search only when benchmark evidence shows it is needed.

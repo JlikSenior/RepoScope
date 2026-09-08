@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { recordSearchRgPerformance } from "./performance";
+import { assertProjectTargetAllowed } from "./project-scope";
 import { executeRipgrep } from "./ripgrep";
 import { scanDirectoryEntries } from "./scanner";
 
@@ -150,6 +151,9 @@ export async function searchFiles(
   targetPath: string,
   keywords: string[],
 ): Promise<SearchResult[]> {
+  const searchRoot = resolve(targetPath);
+  assertProjectTargetAllowed(searchRoot);
+
   if (keywords.length === 0) {
     return [];
   }
@@ -169,7 +173,7 @@ export async function searchFiles(
 
     try {
       const result = await executeRipgrep(
-        buildRipgrepArgs(targetPath, keywordBatch),
+        buildRipgrepArgs(searchRoot, keywordBatch),
         { maxBuffer: SEARCH_MAX_BUFFER_BYTES },
       );
 
@@ -225,14 +229,14 @@ export async function searchFiles(
     matchedKeywordIndices.clear();
     candidateMatches.clear();
     aiReadableFiles = await searchWithPortableFallback(
-      targetPath,
+      searchRoot,
       indexedKeywords,
       matchedKeywordIndices,
       candidateMatches,
     );
   } else {
     aiReadableFiles = new Set(
-      (await scanDirectoryEntries(targetPath)).map((entry) => entry.path),
+      (await scanDirectoryEntries(searchRoot)).map((entry) => entry.path),
     );
   }
 

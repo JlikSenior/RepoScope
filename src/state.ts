@@ -90,11 +90,12 @@ export async function ensureProjectState(
   const canonicalPath = await realpath(resolve(targetPath));
   const paths = await getProjectStatePaths(canonicalPath, options);
 
+  // Keep normal project state entirely inside its project-specific directory.
+  // The legacy global active index is created lazily only by unbound recovery.
   await Promise.all([
     mkdir(paths.cliDir, { recursive: true }),
     mkdir(paths.sessionsDir, { recursive: true }),
     mkdir(paths.activeSessionsDir, { recursive: true }),
-    mkdir(paths.activeIndexDir, { recursive: true }),
   ]);
   await writeFile(
     paths.metadataPath,

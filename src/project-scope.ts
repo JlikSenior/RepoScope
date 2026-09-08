@@ -1,11 +1,25 @@
+import { realpathSync } from "node:fs";
 import { platform } from "node:os";
 import { normalize, resolve } from "node:path";
+
+function canonicalPathForComparison(path: string): string {
+  const resolved = resolve(path);
+
+  try {
+    // On Windows this collapses long-path / 8.3 aliases and junction/symlink
+    // spellings to the same filesystem identity before comparison.
+    return realpathSync.native(resolved);
+  } catch {
+    // Keep diagnostics and validation usable for paths that do not exist yet.
+    return normalize(resolved);
+  }
+}
 
 export function normalizeProjectPathForComparison(
   path: string,
   platformName: NodeJS.Platform = platform(),
 ): string {
-  const normalized = normalize(resolve(path));
+  const normalized = normalize(canonicalPathForComparison(path));
   return platformName === "win32" ? normalized.toLowerCase() : normalized;
 }
 

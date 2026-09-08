@@ -22,11 +22,20 @@ function isObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function buildCursorMcpServer(packageSpec = DEFAULT_NPX_SPEC) {
+export function buildCursorMcpServer(
+  packageSpec = DEFAULT_NPX_SPEC,
+  projectRoot?: string,
+) {
+  const args = ["-y", "--prefer-online", packageSpec];
+
+  if (projectRoot) {
+    args.push("mcp", "--project", projectRoot);
+  }
+
   return {
     type: "stdio" as const,
     command: "npx",
-    args: ["-y", "--prefer-online", packageSpec],
+    args,
   };
 }
 
@@ -132,7 +141,7 @@ export async function installCursorIntegration(options?: {
 
   config.mcpServers = {
     ...(existingServers ?? {}),
-    reposcope: buildCursorMcpServer(packageSpec),
+    reposcope: buildCursorMcpServer(packageSpec, projectRoot),
   };
 
   await writeFile(

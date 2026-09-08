@@ -87,12 +87,16 @@ try {
     printHelp();
   } else if (command === "mcp") {
     const projectRoot = await parseMcpProjectArg(process.argv.slice(3));
+    if (projectRoot) {
+      process.env.REPOSCOPE_BOUND_PROJECT = projectRoot;
+    }
+
     const [{ serveStdio }, { createRepoScopeServer }] = await Promise.all([
       import("@modelcontextprotocol/server/stdio"),
       import("./mcp.mjs"),
     ]);
 
-    await serveStdio(() => createRepoScopeServer({ projectRoot }));
+    await serveStdio(createRepoScopeServer);
   } else {
     console.error(`Unknown RepoScope command: ${command}`);
     printHelp();

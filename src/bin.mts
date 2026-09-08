@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
+
 import {
   buildCursorMcpSnippet,
   DEFAULT_NPX_SPEC,
@@ -10,7 +13,7 @@ import { buildRepoStats } from "./repo-stats.js";
 import { buildProjectSessionHistoryReport } from "./session-history.js";
 
 function printHelp(): void {
-  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start the stdio MCP server\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
+  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start an unbound stdio MCP server\n  reposcope mcp --project DIR            Start a stdio MCP server hard-bound to one project\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
 }
 
 function parseCursorInstallArgs(args: string[]): {
@@ -38,6 +41,16 @@ function parseProjectArg(args: string[], command: string): string {
   if (args.length === 0) return process.cwd();
   if (args.length === 2 && args[0] === "--project") return args[1];
   throw new Error(`Usage: reposcope ${command} [--project <directory>]`);
+}
+
+async function parseMcpProjectArg(args: string[]): Promise<string | undefined> {
+  if (args.length === 0) return undefined;
+
+  if (args.length === 2 && args[0] === "--project") {
+    return realpath(resolve(args[1]));
+  }
+
+  throw new Error("Usage: reposcope mcp [--project <directory>]");
 }
 
 const command = process.argv[2] ?? "mcp";
@@ -73,12 +86,13 @@ try {
   } else if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
   } else if (command === "mcp") {
+    const projectRoot = await parseMcpProjectArg(process.argv.slice(3));
     const [{ serveStdio }, { createRepoScopeServer }] = await Promise.all([
       import("@modelcontextprotocol/server/stdio"),
       import("./mcp.mjs"),
     ]);
 
-    await serveStdio(createRepoScopeServer);
+    await serveStdio(() => createRepoScopeServer({ projectRoot }));
   } else {
     console.error(`Unknown RepoScope command: ${command}`);
     printHelp();

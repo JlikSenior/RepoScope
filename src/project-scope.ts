@@ -19,3 +19,25 @@ export function isSameProjectPath(
     normalizeProjectPathForComparison(right, platformName)
   );
 }
+
+export function getBoundProjectRoot(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const value = env.REPOSCOPE_BOUND_PROJECT?.trim();
+  return value || undefined;
+}
+
+export function assertProjectTargetAllowed(
+  targetPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platformName: NodeJS.Platform = platform(),
+): void {
+  const boundProjectRoot = getBoundProjectRoot(env);
+  if (!boundProjectRoot) return;
+
+  if (!isSameProjectPath(targetPath, boundProjectRoot, platformName)) {
+    throw new Error(
+      `RepoScope MCP is bound to a different project: ${boundProjectRoot}`,
+    );
+  }
+}

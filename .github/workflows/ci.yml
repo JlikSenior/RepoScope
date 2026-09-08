@@ -26,5 +26,5 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Verify no-rg fallback and hard project isolation
-        run: npx tsx --test tests/ripgrep-fallback.test.ts tests/mcp-no-rg.test.mts tests/project-isolation.test.ts tests/mcp-project-isolation.test.mts
+      - name: Verify no-rg fallback, hard project isolation, and Codex adapter
+        run: npx tsx --test tests/ripgrep-fallback.test.ts tests/mcp-no-rg.test.mts tests/project-isolation.test.ts tests/mcp-project-isolation.test.mts tests/codex-setup.test.mts

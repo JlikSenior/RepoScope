@@ -38,6 +38,14 @@ export type ActiveSessionOptions = StatePathOptions & {
 
 const checkpointWrites = new Map<string, Promise<string>>();
 
+function boundProjectRootFor(options: ActiveSessionOptions): string | undefined {
+  return (
+    options.boundProjectRoot ??
+    options.env?.REPOSCOPE_BOUND_PROJECT ??
+    process.env.REPOSCOPE_BOUND_PROJECT
+  );
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -127,8 +135,9 @@ async function writeCheckpoint(
   options: ActiveSessionOptions,
 ): Promise<string> {
   const paths = await ensureProjectState(session.targetPath, options);
+  const boundProjectRoot = boundProjectRootFor(options);
   const expectedBoundProjectId = await projectIdForBoundRoot(
-    options.boundProjectRoot,
+    boundProjectRoot,
     options,
   );
 
@@ -149,7 +158,7 @@ async function writeCheckpoint(
 
   await atomicWriteJson(snapshotPath, snapshot);
 
-  if (options.boundProjectRoot) {
+  if (boundProjectRoot) {
     // Bound MCP processes recover directly from their own project directory.
     // Remove a same-session legacy locator if one exists, but never create a
     // new state-root-wide locator.
@@ -202,11 +211,9 @@ export async function removeSessionCheckpoint(
 
 async function loadBoundProjectCheckpoint(
   sessionId: string,
+  boundProjectRoot: string,
   options: ActiveSessionOptions,
 ): Promise<TaskSession | undefined> {
-  const boundProjectRoot = options.boundProjectRoot;
-  if (!boundProjectRoot) return undefined;
-
   const paths = await getProjectStatePaths(boundProjectRoot, options);
   const snapshotPath = join(paths.activeSessionsDir, `${sessionId}.json`);
   const finishedReportPath = join(paths.sessionsDir, `${sessionId}.json`);
@@ -245,8 +252,9 @@ export async function loadActiveSessionCheckpoint(
   const pending = checkpointWrites.get(sessionId);
   if (pending) await pending.catch(() => undefined);
 
-  if (options.boundProjectRoot) {
-    return loadBoundProjectCheckpoint(sessionId, options);
+  const boundProjectRoot = boundProjectRootFor(options);
+  if (boundProjectRoot) {
+    return loadBoundProjectCheckpoint(sessionId, boundProjectRoot, options);
   }
 
   const stateRoot = getStateRootPath(options);

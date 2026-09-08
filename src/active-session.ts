@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { access, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -19,6 +26,14 @@ type ActiveSessionSnapshot = {
   schemaVersion: 1;
   projectId: string;
   session: TaskSession;
+};
+
+export type ActiveSessionOptions = StatePathOptions & {
+  /**
+   * When present, recovery is hard-bound to this project and never relies on
+   * the legacy state-root-wide active locator index.
+   */
+  boundProjectRoot?: string;
 };
 
 const checkpointWrites = new Map<string, Promise<string>>();
@@ -73,11 +88,57 @@ async function cleanupPaths(...paths: string[]): Promise<void> {
   await Promise.all(paths.map((path) => rm(path, { force: true })));
 }
 
+async function projectIdForBoundRoot(
+  boundProjectRoot: string | undefined,
+  options: StatePathOptions,
+): Promise<string | undefined> {
+  if (!boundProjectRoot) return undefined;
+  return (await getProjectStatePaths(boundProjectRoot, options)).projectId;
+}
+
+async function validateSnapshotForProject(
+  snapshot: ActiveSessionSnapshot,
+  sessionId: string,
+  expectedProjectId: string,
+  options: StatePathOptions,
+): Promise<TaskSession | undefined> {
+  if (
+    snapshot.schemaVersion !== 1 ||
+    snapshot.projectId !== expectedProjectId ||
+    !isTaskSession(snapshot.session) ||
+    snapshot.session.id !== sessionId ||
+    snapshot.session.status !== "active"
+  ) {
+    return undefined;
+  }
+
+  try {
+    const sessionPaths = await getProjectStatePaths(snapshot.session.targetPath, options);
+    if (sessionPaths.projectId !== expectedProjectId) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  return snapshot.session;
+}
+
 async function writeCheckpoint(
   session: TaskSession,
-  options: StatePathOptions,
+  options: ActiveSessionOptions,
 ): Promise<string> {
   const paths = await ensureProjectState(session.targetPath, options);
+  const expectedBoundProjectId = await projectIdForBoundRoot(
+    options.boundProjectRoot,
+    options,
+  );
+
+  if (
+    expectedBoundProjectId !== undefined &&
+    expectedBoundProjectId !== paths.projectId
+  ) {
+    throw new Error("Session does not belong to the MCP-bound project");
+  }
+
   const snapshotPath = join(paths.activeSessionsDir, `${session.id}.json`);
   const locatorPath = join(paths.activeIndexDir, `${session.id}.json`);
   const snapshot: ActiveSessionSnapshot = {
@@ -85,21 +146,30 @@ async function writeCheckpoint(
     projectId: paths.projectId,
     session,
   };
+
+  await atomicWriteJson(snapshotPath, snapshot);
+
+  if (options.boundProjectRoot) {
+    // Bound MCP processes recover directly from their own project directory.
+    // Remove a same-session legacy locator if one exists, but never create a
+    // new state-root-wide locator.
+    await cleanupPaths(locatorPath);
+    return snapshotPath;
+  }
+
   const locator: ActiveSessionLocator = {
     schemaVersion: 1,
     projectId: paths.projectId,
   };
 
-  // Write the project-local snapshot first. A locator must never point at a
-  // snapshot that has not been fully committed yet.
-  await atomicWriteJson(snapshotPath, snapshot);
+  await mkdir(paths.activeIndexDir, { recursive: true });
   await atomicWriteJson(locatorPath, locator);
   return snapshotPath;
 }
 
 export async function persistSessionCheckpoint(
   session: TaskSession,
-  options: StatePathOptions = {},
+  options: ActiveSessionOptions = {},
 ): Promise<string> {
   const previous = checkpointWrites.get(session.id);
   const current = (previous ? previous.catch(() => undefined) : Promise.resolve())
@@ -118,7 +188,7 @@ export async function persistSessionCheckpoint(
 
 export async function removeSessionCheckpoint(
   session: Pick<TaskSession, "id" | "targetPath">,
-  options: StatePathOptions = {},
+  options: ActiveSessionOptions = {},
 ): Promise<void> {
   const pending = checkpointWrites.get(session.id);
   if (pending) await pending.catch(() => undefined);
@@ -130,12 +200,54 @@ export async function removeSessionCheckpoint(
   );
 }
 
+async function loadBoundProjectCheckpoint(
+  sessionId: string,
+  options: ActiveSessionOptions,
+): Promise<TaskSession | undefined> {
+  const boundProjectRoot = options.boundProjectRoot;
+  if (!boundProjectRoot) return undefined;
+
+  const paths = await getProjectStatePaths(boundProjectRoot, options);
+  const snapshotPath = join(paths.activeSessionsDir, `${sessionId}.json`);
+  const finishedReportPath = join(paths.sessionsDir, `${sessionId}.json`);
+
+  if (await pathExists(finishedReportPath)) {
+    await cleanupPaths(snapshotPath);
+    return undefined;
+  }
+
+  let snapshot: ActiveSessionSnapshot;
+  try {
+    snapshot = JSON.parse(await readFile(snapshotPath, "utf8")) as ActiveSessionSnapshot;
+  } catch {
+    return undefined;
+  }
+
+  const session = await validateSnapshotForProject(
+    snapshot,
+    sessionId,
+    paths.projectId,
+    options,
+  );
+
+  if (!session) {
+    await cleanupPaths(snapshotPath);
+    return undefined;
+  }
+
+  return session;
+}
+
 export async function loadActiveSessionCheckpoint(
   sessionId: string,
-  options: StatePathOptions = {},
+  options: ActiveSessionOptions = {},
 ): Promise<TaskSession | undefined> {
   const pending = checkpointWrites.get(sessionId);
   if (pending) await pending.catch(() => undefined);
+
+  if (options.boundProjectRoot) {
+    return loadBoundProjectCheckpoint(sessionId, options);
+  }
 
   const stateRoot = getStateRootPath(options);
   const locatorPath = join(stateRoot, "active", `${sessionId}.json`);
@@ -160,8 +272,6 @@ export async function loadActiveSessionCheckpoint(
   const snapshotPath = join(projectDir, "active", `${sessionId}.json`);
   const finishedReportPath = join(projectDir, "sessions", `${sessionId}.json`);
 
-  // A final report wins over any stale active checkpoint left behind by a
-  // process that died between finishing and cleanup.
   if (await pathExists(finishedReportPath)) {
     await cleanupPaths(snapshotPath, locatorPath);
     return undefined;
@@ -175,26 +285,17 @@ export async function loadActiveSessionCheckpoint(
     return undefined;
   }
 
-  if (
-    snapshot.schemaVersion !== 1 ||
-    snapshot.projectId !== locator.projectId ||
-    !isTaskSession(snapshot.session) ||
-    snapshot.session.id !== sessionId ||
-    snapshot.session.status !== "active"
-  ) {
+  const session = await validateSnapshotForProject(
+    snapshot,
+    sessionId,
+    locator.projectId,
+    options,
+  );
+
+  if (!session) {
     await cleanupPaths(snapshotPath, locatorPath);
     return undefined;
   }
 
-  try {
-    const paths = await getProjectStatePaths(snapshot.session.targetPath, options);
-    if (paths.projectId !== locator.projectId) {
-      await cleanupPaths(snapshotPath, locatorPath);
-      return undefined;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return snapshot.session;
+  return session;
 }

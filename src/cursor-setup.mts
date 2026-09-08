@@ -3,7 +3,9 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const DEFAULT_NPX_SPEC = "github:JlikSenior/RepoScope#main";
+import { buildMcpLaunchSpec, DEFAULT_NPX_SPEC } from "./mcp-launch.mjs";
+
+export { DEFAULT_NPX_SPEC } from "./mcp-launch.mjs";
 
 export type CursorInstallScope = "project" | "global";
 
@@ -26,16 +28,9 @@ export function buildCursorMcpServer(
   packageSpec = DEFAULT_NPX_SPEC,
   projectRoot?: string,
 ) {
-  const args = ["-y", "--prefer-online", packageSpec];
-
-  if (projectRoot) {
-    args.push("mcp", "--project", projectRoot);
-  }
-
   return {
     type: "stdio" as const,
-    command: "npx",
-    args,
+    ...buildMcpLaunchSpec(packageSpec, projectRoot),
   };
 }
 

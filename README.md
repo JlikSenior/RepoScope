@@ -8,29 +8,36 @@ The product hypothesis is simple:
 
 > **Keep verified task success close to the normal Agent baseline while materially reducing repository/model context.**
 
-## Quick start with Cursor
+## Quick start with supported agents
 
-During testing, install RepoScope only in the project where you want to evaluate it. Run this from that project root:
+RepoScope integrations are project-scoped by default. From a project root, install the adapter for the Agent you use:
 
 ```bash
-npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install
+# Cursor
+npx -y --prefer-online github:JlikSenior/RepoScope#main install cursor
+
+# Codex
+npx -y --prefer-online github:JlikSenior/RepoScope#main install codex
 ```
 
-By default this command is **project-scoped**. It:
+Both adapters hard-bind the RepoScope MCP startup command to the project's canonical absolute path, so two same-named repositories at different paths receive different MCP identities and cannot share active runtime state accidentally.
 
-- adds RepoScope to `<project>/.cursor/mcp.json`,
-- hard-binds that MCP startup command to the project's canonical absolute path,
-- installs `reposcope` and `reposcope-benchmark` under `<project>/.cursor/skills/`,
-- preserves existing project MCP servers,
-- does not modify your global Cursor configuration.
+The Cursor adapter writes project MCP configuration under `<project>/.cursor/`, installs the RepoScope Always Apply rule, and installs the packaged RepoScope Skills. The Codex adapter writes a managed RepoScope MCP section to `<project>/.codex/config.toml` and a managed RepoScope guidance section to the repository `AGENTS.md`; existing user content is preserved.
 
-After installation, restart Cursor or reload MCPs. The configured MCP command follows the GitHub `main` branch and uses npm's fresh-cache check, so RepoScope updates do not require changing a local project path.
+To install into another project explicitly:
 
-The repository is currently private, so the machine running Cursor must already have GitHub Git access configured.
+```bash
+npx -y --prefer-online github:JlikSenior/RepoScope#main install cursor --project /path/to/project
+npx -y --prefer-online github:JlikSenior/RepoScope#main install codex --project /path/to/project
+```
 
-Global installation remains available explicitly with `cursor-install --global`, but project scope is the recommended mode while RepoScope is being tested.
+After installation, restart or reload the relevant Agent/MCP integration. The configured MCP command follows the GitHub `main` branch and currently uses npm's fresh-cache check.
 
-See [`docs/cursor.md`](docs/cursor.md) for details.
+The repository is currently private, so the local machine must already have GitHub Git access configured.
+
+The older `cursor-install` command remains available as a compatibility alias, including its explicit `--global` mode. New project integrations should prefer `install <agent>`.
+
+See [`docs/cursor.md`](docs/cursor.md) and [`docs/codex.md`](docs/codex.md) for adapter details.
 
 ## Product boundary
 
@@ -73,7 +80,7 @@ A single-project MCP process can be hard-bound explicitly:
 npx -y --prefer-online github:JlikSenior/RepoScope#main mcp --project /absolute/path/to/project
 ```
 
-Project-scoped `cursor-install` writes this bound form automatically.
+Project-scoped Agent adapters write this bound form automatically.
 
 For RepoScope development from a checkout:
 
@@ -110,9 +117,9 @@ The Agent should not request the whole repository by default.
 
 ## Multi-project state isolation
 
-Cursor exposure scope, MCP process identity, and RepoScope runtime-state scope are separate concerns.
+Agent configuration scope, MCP process identity, and RepoScope runtime-state scope are separate concerns.
 
-With project-scoped installation, each workspace gets a `.cursor/mcp.json` entry containing its **canonical absolute project root** as `mcp --project <root>`. Therefore two repositories with the same folder/repository name still have different MCP startup identities when their paths differ.
+Project-scoped adapters write the project's **canonical absolute root** into the MCP launch as `mcp --project <root>`. Cursor stores that launch in `.cursor/mcp.json`; Codex stores the same command/args in `.codex/config.toml`. Therefore two repositories with the same folder/repository name still have different MCP startup identities when their paths differ.
 
 The bound RepoScope process also enforces that root internally. Repository scanning/searching and session creation for another project are rejected even if a host accidentally routes the request to the wrong RepoScope process.
 
@@ -150,14 +157,19 @@ On bound MCP startup, RepoScope removes abandoned active checkpoints older than 
 
 Every session has a UUID and is bound to its canonical target repository. A session created for project A cannot be recovered or used by a project-bound MCP process for project B.
 
-## Agent Skills
+## Agent guidance adapters
 
-RepoScope ships two portable Skills:
+RepoScope keeps Agent-specific guidance outside Core.
 
-- `skills/reposcope/SKILL.md` — normal coding workflow. It makes RepoScope the repository search/read/context gateway while leaving reasoning and editing to the Agent.
-- `skills/reposcope-benchmark/SKILL.md` — explicit benchmark mode with stricter no-fallback rules.
+The Cursor adapter installs:
 
-Project-scoped `cursor-install` copies both into `<project>/.cursor/skills/`, which Cursor discovers only for that project. Explicit `cursor-install --global` keeps the previous user-level behavior.
+- `skills/reposcope/SKILL.md` — normal coding workflow,
+- `skills/reposcope-benchmark/SKILL.md` — explicit benchmark workflow,
+- `.cursor/rules/reposcope.mdc` — Always Apply repository-access policy.
+
+The Codex adapter preserves repository-owned guidance and maintains only a marked RepoScope section inside `AGENTS.md`. It likewise maintains only a marked `[mcp_servers.reposcope]` section in `.codex/config.toml`; an existing unmanaged RepoScope MCP entry is treated as a conflict rather than overwritten.
+
+This Adapter layer is intentionally separate from the 11-tool RepoScope MCP/Core surface so additional local MCP-capable coding Agents can be added without changing repository search/read semantics.
 
 ## Integration utilities
 
@@ -293,13 +305,13 @@ Run the full validation suite:
 npm run check
 ```
 
-The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, hard per-project isolation, Cursor installer tests, compiled-package MCP runtime checks, Windows smoke coverage, Pilot checks, and real stdio MCP lifecycle tests.
+The suite includes repository boundaries, source budgets, deduplication, guarded writes, verification commands, session lifecycle, benchmark calculations, hard per-project isolation, Cursor/Codex adapter tests, compiled-package MCP runtime checks, Windows smoke coverage, Pilot checks, and real stdio MCP lifecycle tests.
 
 ## Current development priority
 
 The MVP has enough capability to run real coding experiments. The priority is evidence and usability rather than feature count:
 
 1. keep local-Agent installation and multi-project use reliable,
-2. run paired baseline vs RepoScope tasks on real repositories,
-3. measure verified success and context cost together,
+2. eliminate repeated package/bootstrap work from normal MCP startup,
+3. run paired baseline vs RepoScope tasks on real repositories,
 4. improve localization/search only when benchmark evidence shows it is needed.

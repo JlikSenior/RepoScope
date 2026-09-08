@@ -11,6 +11,7 @@ import {
 } from "./cursor-setup.mjs";
 import { buildRepoStats } from "./repo-stats.js";
 import { buildProjectSessionHistoryReport } from "./session-history.js";
+import { cleanupProjectRuntimeState } from "./state-cleanup.js";
 
 function printHelp(): void {
   console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start an unbound stdio MCP server\n  reposcope mcp --project DIR            Start a stdio MCP server hard-bound to one project\n  reposcope cursor-install               Install Cursor integration in the current project\n  reposcope cursor-install --project DIR Install Cursor integration in a specific project\n  reposcope cursor-install --global      Install Cursor integration globally\n  reposcope cursor-config                Print the Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
@@ -89,6 +90,16 @@ try {
     const projectRoot = await parseMcpProjectArg(process.argv.slice(3));
     if (projectRoot) {
       process.env.REPOSCOPE_BOUND_PROJECT = projectRoot;
+      const cleanup = await cleanupProjectRuntimeState(projectRoot);
+      if (
+        cleanup.removedActiveSessions > 0 ||
+        cleanup.removedTempFiles > 0 ||
+        cleanup.removedLegacyLocators > 0
+      ) {
+        console.error(
+          `RepoScope cleaned stale project state: ${JSON.stringify(cleanup)}`,
+        );
+      }
     }
 
     const [{ serveStdio }, { createRepoScopeServer }] = await Promise.all([

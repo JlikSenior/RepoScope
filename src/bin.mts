@@ -9,12 +9,14 @@ import {
   installCursorIntegration,
   type CursorInstallScope,
 } from "./cursor-setup.mjs";
+import { buildDoctorReport } from "./doctor.mjs";
 import {
   installAgentIntegration,
   parseSupportedAgent,
   type SupportedAgent,
 } from "./integration-setup.mjs";
 import { buildRepoStats } from "./repo-stats.js";
+import { cleanupRuntimeInstallGarbage } from "./runtime-cleanup.mjs";
 import {
   ensureLocalRuntime,
   getInstalledRuntime,
@@ -25,7 +27,7 @@ import { buildProjectSessionHistoryReport } from "./session-history.js";
 import { cleanupProjectRuntimeState } from "./state-cleanup.js";
 
 function printHelp(): void {
-  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start an unbound stdio MCP server\n  reposcope mcp --project DIR            Start a stdio MCP server hard-bound to one project\n  reposcope install cursor               Ensure local runtime and install project Cursor adapter\n  reposcope install codex                Ensure local runtime and install project Codex adapter\n  reposcope install cursor --project DIR Install Cursor adapter for a specific project\n  reposcope install codex --project DIR  Install Codex adapter for a specific project\n  reposcope runtime install              Install/update the fixed local RepoScope runtime\n  reposcope runtime install --source SRC Install/update runtime from a package source\n  reposcope runtime status               Show the installed local runtime\n  reposcope cursor-install               Legacy alias for project-scoped Cursor install\n  reposcope cursor-install --project DIR Legacy Cursor install for a specific project\n  reposcope cursor-install --global      Install unbound Cursor integration globally\n  reposcope cursor-config                Print the generic npx Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
+  console.log(`RepoScope\n\nUsage:\n  reposcope                              Start the stdio MCP server\n  reposcope mcp                          Start an unbound stdio MCP server\n  reposcope mcp --project DIR            Start a stdio MCP server hard-bound to one project\n  reposcope install cursor               Ensure local runtime and install project Cursor adapter\n  reposcope install codex                Ensure local runtime and install project Codex adapter\n  reposcope install cursor --project DIR Install Cursor adapter for a specific project\n  reposcope install codex --project DIR  Install Codex adapter for a specific project\n  reposcope runtime install              Install/update the fixed local RepoScope runtime\n  reposcope runtime install --source SRC Install/update runtime from a package source\n  reposcope runtime status               Show the installed local runtime\n  reposcope doctor                       Diagnose current project and local RepoScope runtime\n  reposcope doctor --agent cursor        Diagnose current project plus Cursor adapter\n  reposcope doctor --agent codex         Diagnose current project plus Codex adapter\n  reposcope doctor --project DIR         Diagnose a specific project\n  reposcope cleanup                      Safely prune stale runtime/project temporary state\n  reposcope cleanup --project DIR        Safely prune stale state for a specific project\n  reposcope cursor-install               Legacy alias for project-scoped Cursor install\n  reposcope cursor-install --project DIR Legacy Cursor install for a specific project\n  reposcope cursor-install --global      Install unbound Cursor integration globally\n  reposcope cursor-config                Print the generic npx Cursor MCP JSON snippet\n  reposcope project-report               Print accumulated session metrics for the current project\n  reposcope project-report --project DIR Print accumulated session metrics for a project\n  reposcope repo-stats                    Explain the current project's whole-repo token estimate\n  reposcope repo-stats --project DIR      Explain a project's whole-repo token estimate\n  reposcope help                         Show this help`);
 }
 
 function parseCursorInstallArgs(args: string[]): {
@@ -102,6 +104,33 @@ function parseProjectArg(args: string[], command: string): string {
   throw new Error(`Usage: reposcope ${command} [--project <directory>]`);
 }
 
+function parseDoctorArgs(args: string[]): {
+  projectRoot: string;
+  agent?: SupportedAgent;
+} {
+  let projectRoot = process.cwd();
+  let agent: SupportedAgent | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--project" && index + 1 < args.length) {
+      projectRoot = args[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg === "--agent" && index + 1 < args.length) {
+      agent = parseSupportedAgent(args[index + 1]);
+      index += 1;
+      continue;
+    }
+    throw new Error(
+      "Usage: reposcope doctor [--project <directory>] [--agent <cursor|codex>]",
+    );
+  }
+
+  return { projectRoot, agent };
+}
+
 async function parseMcpProjectArg(args: string[]): Promise<string | undefined> {
   if (args.length === 0) return undefined;
 
@@ -161,6 +190,31 @@ try {
         ),
       );
     }
+  } else if (command === "doctor") {
+    const options = parseDoctorArgs(process.argv.slice(3));
+    const report = await buildDoctorReport(options.projectRoot, {
+      agent: options.agent,
+    });
+    console.log(JSON.stringify(report, null, 2));
+    if (report.status === "error") process.exitCode = 1;
+  } else if (command === "cleanup") {
+    const projectRoot = parseProjectArg(process.argv.slice(3), command);
+    const [project, runtime] = await Promise.all([
+      cleanupProjectRuntimeState(projectRoot),
+      cleanupRuntimeInstallGarbage(),
+    ]);
+    console.log(
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          projectRoot: await realpath(resolve(projectRoot)),
+          project,
+          runtime,
+        },
+        null,
+        2,
+      ),
+    );
   } else if (command === "cursor-install") {
     const options = parseCursorInstallArgs(process.argv.slice(3));
 

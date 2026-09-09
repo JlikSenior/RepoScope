@@ -20,3 +20,19 @@ export function buildMcpLaunchSpec(
     args,
   };
 }
+
+export function buildInstalledRuntimeMcpLaunchSpec(
+  runtimeEntryPath: string,
+  projectRoot?: string,
+): McpLaunchSpec {
+  const args = [runtimeEntryPath];
+
+  if (projectRoot) {
+    args.push("mcp", "--project", projectRoot);
+  }
+
+  return {
+    command: "node",
+    args,
+  };
+}

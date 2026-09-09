@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Verify no-rg fallback, isolation, adapters, doctor, and cleanup
-        run: npx tsx --test tests/ripgrep-fallback.test.ts tests/mcp-no-rg.test.mts tests/project-isolation.test.ts tests/mcp-project-isolation.test.mts tests/codex-setup.test.mts tests/local-runtime-adapters.test.mts tests/doctor.test.mts tests/doctor-cli.test.mts tests/runtime-cleanup.test.mts
+      - name: Verify no-rg fallback, isolation, adapters, doctor, cleanup, and uninstall
+        run: npx tsx --test tests/ripgrep-fallback.test.ts tests/mcp-no-rg.test.mts tests/project-isolation.test.ts tests/mcp-project-isolation.test.mts tests/codex-setup.test.mts tests/local-runtime-adapters.test.mts tests/doctor.test.mts tests/doctor-cli.test.mts tests/runtime-cleanup.test.mts tests/integration-uninstall.test.mts tests/uninstall-cli.test.mts
       - name: Verify packaged local runtime install and launch
         run: npm run runtime:check

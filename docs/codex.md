@@ -16,6 +16,8 @@ Or target another repository explicitly:
 npx -y --prefer-online github:JlikSenior/RepoScope#main install codex --project /path/to/project
 ```
 
+The first project install on a machine ensures one fixed local RepoScope runtime exists. Later project installs reuse that runtime instead of creating a per-project runtime copy.
+
 The adapter resolves the canonical absolute repository root and writes only two RepoScope-managed sections:
 
 ```text
@@ -34,12 +36,14 @@ RepoScope maintains a marked section in `.codex/config.toml`:
 ```toml
 # >>> RepoScope managed MCP >>>
 [mcp_servers.reposcope]
-command = "npx"
-args = ["-y", "--prefer-online", "github:JlikSenior/RepoScope#main", "mcp", "--project", "/absolute/path/to/project"]
+command = "node"
+args = ["/path/to/reposcope/runtime/current/node_modules/reposcope/dist/bin.mjs", "mcp", "--project", "/absolute/path/to/project"]
 # <<< RepoScope managed MCP <<<
 ```
 
-The `--project` argument is intentional. It gives each repository a distinct MCP startup identity and hard-binds the RepoScope process to that canonical root. Two repositories with the same final directory name but different paths therefore remain isolated.
+The runtime entry is shared across projects. The `--project` argument is intentionally project-specific: it gives each repository a distinct MCP startup identity and hard-binds the RepoScope process to that canonical root. Two repositories with the same final directory name but different paths therefore remain isolated.
+
+Normal Codex MCP startup no longer runs `npx`, fetches the GitHub package, or rebuilds RepoScope. The initial `npx ... install codex` command is only the bootstrap path used to ensure the local runtime exists and write the Adapter configuration.
 
 If `.codex/config.toml` already contains an unmanaged `[mcp_servers.reposcope]` table, the installer refuses to overwrite it. Resolve that conflict manually, then rerun the installer.
 
@@ -61,16 +65,15 @@ Repository-owned guidance before or after the managed block is left unchanged. R
 
 ## Runtime/state isolation
 
-The Codex adapter uses the same project-bound MCP launch specification as the Cursor adapter. RepoScope runtime state remains outside the repository under the path-derived per-project state directory.
+The Codex adapter uses the same project-bound local Runtime launch specification as the Cursor adapter. One Runtime binary is shared, while RepoScope runtime state remains outside the repository under the path-derived per-project state directory.
 
 Project-bound active sessions are recovered only from that project's state directory. A bound RepoScope process rejects scan/search/session-start attempts aimed at another project.
 
-## Current runtime bootstrap
+Inspect or refresh the fixed local Runtime with:
 
-The adapter currently launches RepoScope through:
-
-```text
-npx -y --prefer-online github:JlikSenior/RepoScope#main
+```bash
+reposcope runtime status
+reposcope runtime install
 ```
 
-That keeps installation path-free while the project is private, but it still uses npm/npx's shared package cache. Replacing repeated npx bootstrap with a single installed local RepoScope runtime is a separate productization step; the Cursor and Codex adapters deliberately share one launch-spec abstraction so that future runtime change can apply to both without changing RepoScope Core or its MCP tool schema.
+See [`runtime.md`](runtime.md) for Runtime location, staging/update, and npm-cache behavior.

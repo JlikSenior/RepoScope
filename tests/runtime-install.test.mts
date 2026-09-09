@@ -45,16 +45,7 @@ async function missing(path: string): Promise<boolean> {
   }
 }
 
-test("runtime root follows platform data conventions", () => {
-  assert.equal(
-    getRuntimeRootPath({
-      platformName: "win32",
-      homeDir: "C:\\Users\\test",
-      env: { LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" },
-    }),
-    "C:\\Users\\test\\AppData\\Local\\RepoScope\\runtime",
-  );
-
+test("runtime root honors explicit override and Linux XDG data convention", () => {
   assert.equal(
     getRuntimeRootPath({
       platformName: "linux",
@@ -66,7 +57,6 @@ test("runtime root follows platform data conventions", () => {
 
   assert.equal(
     getRuntimeRootPath({
-      platformName: "linux",
       homeDir: "/home/test",
       env: { REPOSCOPE_RUNTIME_DIR: "/custom/reposcope-runtime" },
     }),

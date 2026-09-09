@@ -9,7 +9,7 @@ import {
   STALE_RUNTIME_TEMP_MS,
 } from "../src/runtime-cleanup.mjs";
 
-async function exists(path) {
+async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;

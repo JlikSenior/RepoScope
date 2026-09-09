@@ -10,6 +10,8 @@ Run the generic Agent installer from the project root:
 npx -y --prefer-online github:JlikSenior/RepoScope#main install cursor
 ```
 
+The first project install on a machine ensures one fixed local RepoScope runtime exists. Later project installs reuse that runtime instead of creating a per-project runtime copy.
+
 The older `cursor-install` command remains available as a compatibility alias. New project setup should prefer `install cursor`.
 
 The Cursor adapter writes only inside the current project:
@@ -27,18 +29,16 @@ The Cursor adapter writes only inside the current project:
         SKILL.md
 ```
 
-The project MCP entry launches RepoScope through `npx` and hard-binds that MCP process to the canonical project root:
+The project MCP entry launches the fixed local RepoScope runtime directly and hard-binds that MCP process to the canonical project root:
 
 ```json
 {
   "mcpServers": {
     "reposcope": {
       "type": "stdio",
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "--prefer-online",
-        "github:JlikSenior/RepoScope#main",
+        "/path/to/reposcope/runtime/current/node_modules/reposcope/dist/bin.mjs",
         "mcp",
         "--project",
         "/absolute/path/to/project"
@@ -48,7 +48,9 @@ The project MCP entry launches RepoScope through `npx` and hard-binds that MCP p
 }
 ```
 
-The absolute project argument is intentional. Two workspaces with the same directory/repository name still receive different MCP startup identities because their canonical roots differ. RepoScope also enforces that bound root internally: a project-bound MCP process rejects repository scan/search/session-start requests aimed at another project.
+The Runtime entry is shared across projects. The absolute project argument is intentionally project-specific. Two workspaces with the same directory/repository name still receive different MCP startup identities because their canonical roots differ. RepoScope also enforces that bound root internally: a project-bound MCP process rejects repository scan/search/session-start requests aimed at another project.
+
+Normal Cursor MCP startup no longer runs `npx`, fetches the GitHub package, or rebuilds RepoScope. The initial `npx ... install cursor` command is only the bootstrap path used to ensure the local Runtime exists and write the Adapter configuration.
 
 Existing project MCP servers in `.cursor/mcp.json` are preserved.
 
@@ -62,9 +64,7 @@ To install into a different project directory without changing the shell working
 npx -y --prefer-online github:JlikSenior/RepoScope#main install cursor --project /path/to/project
 ```
 
-Because the GitHub repository is currently private, the local machine must already have GitHub Git access configured. No local RepoScope checkout path is required.
-
-`--prefer-online` asks npm to check for a fresher package even when a cached copy exists, so the MCP config can follow the current `main` branch without being edited after RepoScope updates.
+Because the GitHub repository is currently private, the initial bootstrap machine must already have GitHub Git access configured. No local RepoScope checkout path is required.
 
 ## Optional legacy global install
 
@@ -74,13 +74,11 @@ Global Cursor installation remains available only through the compatibility comm
 npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-install --global
 ```
 
-This writes the MCP configuration to `~/.cursor/mcp.json` and the skills to `~/.agents/skills/`. It does not create the project-specific Always Apply rule and remains unbound because one global registration may be used by multiple repositories.
-
-Prefer project scope so RepoScope receives hard project binding and each repository stays independently configurable.
+This writes the MCP configuration to `~/.cursor/mcp.json` and the skills to `~/.agents/skills/`. It remains an unbound legacy path because one global registration may be used by multiple repositories. Project-scoped installation is the recommended product path.
 
 ## Multiple projects
 
-With project-scoped installation, each workspace has its own Cursor MCP registration, project rule, project skills, and canonical `--project` startup argument.
+With project-scoped installation, each workspace has its own Cursor MCP registration, project rule, project skills, and canonical `--project` startup argument, while all projects can reuse the same installed Runtime entry.
 
 RepoScope runtime state is independently isolated as well. Each target repository is canonicalized and assigned a path-derived project id. RepoScope-owned diagnostic/state files are kept outside the repository in a per-project state directory.
 
@@ -90,8 +88,22 @@ Task sessions are also bound to the repository they were created for. A `session
 
 Therefore these are separate concerns:
 
-- `.cursor/` controls **where Cursor exposes and instructs use of RepoScope** and gives each project a distinct MCP startup identity.
+- the fixed local Runtime controls **which RepoScope code is executed** and is intentionally shared,
+- `.cursor/` controls **where Cursor exposes and instructs use of RepoScope** and gives each project a distinct `--project` identity,
 - RepoScope's user state directory controls **where runtime state is stored**; project-bound active state stays within one path-derived project directory.
+
+## Runtime lifecycle
+
+Inspect or refresh the fixed local Runtime with:
+
+```bash
+reposcope runtime status
+reposcope runtime install
+```
+
+Runtime replacement is staged and validated before the stable `current` directory is switched. Normal Cursor starts keep pointing at the same stable path.
+
+See [`runtime.md`](runtime.md) for Runtime locations, update behavior, and npm-cache handling.
 
 ## Active session recovery and cleanup
 
@@ -135,14 +147,10 @@ A run is contaminated if the Agent falls back to Cursor's built-in repository se
 
 ## Manual config only
 
-If you do not want the installer to modify Cursor configuration, print the generic unbound config snippet instead:
+If you do not want the installer to modify Cursor configuration, print the generic legacy unbound npx config snippet instead:
 
 ```bash
 npx -y --prefer-online github:JlikSenior/RepoScope#main cursor-config
 ```
 
-For normal project use, prefer `install cursor` because it writes the project-bound `--project` argument automatically.
-
-## Future runtime/package direction
-
-The GitHub package spec is the current zero-path installation method. Cursor and Codex now share one RepoScope MCP launch-spec abstraction, so replacing repeated npx bootstrap with a single installed local runtime can be done without changing either Agent's RepoScope Core/MCP semantics.
+For normal project use, prefer `install cursor` because it ensures the fixed local Runtime and writes the project-bound `--project` argument automatically.

@@ -141,4 +141,4 @@ Codex  → .codex/config.toml
 
 Each project configuration still includes its own canonical `--project` argument, so two same-named repositories can share one Runtime binary without sharing MCP identity or project state.
 
-Formal release tags/npm publication and semantic release-channel policy remain a later M3 step; revision-aware checking is the prerequisite that makes the current private `main` channel truthful in the meantime.
+Release tags and GitHub Release artifacts now follow the version contract in [`release.md`](release.md). The moving `main` ref remains the development/update-aware source, while exact `vX.Y.Z` refs are reproducible pinned releases. Public npm publication remains a separate M3 gate until registry namespace/ownership and CI authentication are explicitly configured.

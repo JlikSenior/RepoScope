@@ -14,7 +14,6 @@ import {
   parseSupportedAgent,
   type SupportedAgent,
 } from "./integration-setup.mjs";
-import { buildInstalledRuntimeMcpLaunchSpec } from "./mcp-launch.mjs";
 import { buildRepoStats } from "./repo-stats.js";
 import {
   ensureLocalRuntime,

@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -107,8 +107,10 @@ async function defaultInstaller(request: {
   cacheDir: string;
   env: NodeJS.ProcessEnv;
 }): Promise<void> {
+  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+
   await execFileAsync(
-    "npm",
+    npmExecutable,
     [
       "install",
       "--prefix",

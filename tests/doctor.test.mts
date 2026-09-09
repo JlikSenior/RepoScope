@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { test } from "node:test";
 
-import { buildDoctorReport } from "../src/doctor.mjs";
+import {
+  buildDoctorReport,
+  type DoctorCheck,
+  type DoctorReport,
+} from "../src/doctor.mjs";
 import { installAgentIntegration } from "../src/integration-setup.mjs";
 import { installLocalRuntime } from "../src/runtime-install.mjs";
 
@@ -47,7 +51,7 @@ async function makeFixture() {
   return { root, project, runtimeRoot, stateRoot, env, runtime };
 }
 
-function check(report, id) {
+function check(report: DoctorReport, id: string): DoctorCheck {
   const value = report.checks.find((item) => item.id === id);
   assert(value, `Missing doctor check: ${id}`);
   return value;

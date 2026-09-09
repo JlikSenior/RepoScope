@@ -8,6 +8,15 @@ import { test } from "node:test";
 
 const execFileAsync = promisify(execFile);
 
+type CliFailure = Error & {
+  stdout?: string | Buffer;
+};
+
+type DoctorCliReport = {
+  status: "ok" | "warning" | "error";
+  checks: Array<{ id: string; status: "ok" | "warning" | "error" }>;
+};
+
 test("doctor CLI emits JSON and exits non-zero when the fixed runtime is missing", async () => {
   const root = await mkdtemp(join(tmpdir(), "reposcope-doctor-cli-"));
   const project = join(root, "project");
@@ -18,7 +27,7 @@ test("doctor CLI emits JSON and exits non-zero when the fixed runtime is missing
     await mkdir(project, { recursive: true });
     await execFileAsync("git", ["init"], { cwd: project });
 
-    let error;
+    let failure: CliFailure | undefined;
     try {
       await execFileAsync(
         process.execPath,
@@ -34,12 +43,12 @@ test("doctor CLI emits JSON and exits non-zero when the fixed runtime is missing
         },
       );
     } catch (caught) {
-      error = caught;
+      failure = caught as CliFailure;
     }
 
-    assert(error);
-    const stdout = String(error.stdout ?? "");
-    const report = JSON.parse(stdout);
+    assert(failure);
+    const stdout = String(failure.stdout ?? "");
+    const report = JSON.parse(stdout) as DoctorCliReport;
     assert.equal(report.status, "error");
     assert.equal(
       report.checks.find((check) => check.id === "runtime")?.status,
@@ -70,7 +79,11 @@ test("cleanup CLI returns bounded cleanup results", async () => {
         maxBuffer: 4 * 1024 * 1024,
       },
     );
-    const result = JSON.parse(stdout);
+    const result = JSON.parse(stdout) as {
+      schemaVersion: number;
+      project: { removedActiveSessions: number };
+      runtime: { removedInstallDirs: number };
+    };
     assert.equal(result.schemaVersion, 1);
     assert.equal(result.project.removedActiveSessions, 0);
     assert.equal(result.runtime.removedInstallDirs, 0);

@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -101,16 +101,64 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+async function resolveWindowsNpmCli(env: NodeJS.ProcessEnv): Promise<string> {
+  const configured = env.npm_execpath;
+  if (configured && (await exists(configured))) {
+    return configured;
+  }
+
+  let stdout: string;
+  try {
+    const result = await execFileAsync("where.exe", ["npm.cmd"], {
+      env,
+      maxBuffer: 1024 * 1024,
+    });
+    stdout = result.stdout;
+  } catch (error) {
+    throw new Error(
+      `Cannot locate npm for RepoScope Runtime install: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const npmCmd = rawLine.trim();
+    if (!npmCmd) continue;
+    const candidate = join(dirname(npmCmd), "node_modules", "npm", "bin", "npm-cli.js");
+    if (await exists(candidate)) return candidate;
+  }
+
+  throw new Error(
+    "Cannot locate npm-cli.js for RepoScope Runtime install. Run the bootstrap through npx/npm or ensure Node.js npm is installed.",
+  );
+}
+
+async function executeNpm(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const commonOptions = {
+    env,
+    maxBuffer: 64 * 1024 * 1024,
+  };
+
+  if (process.platform === "win32") {
+    const npmCli = await resolveWindowsNpmCli(env);
+    await execFileAsync(process.execPath, [npmCli, ...args], commonOptions);
+    return;
+  }
+
+  await execFileAsync("npm", args, commonOptions);
+}
+
 async function defaultInstaller(request: {
   stagingDir: string;
   sourceSpec: string;
   cacheDir: string;
   env: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
-
-  await execFileAsync(
-    npmExecutable,
+  await executeNpm(
     [
       "install",
       "--prefix",
@@ -122,13 +170,10 @@ async function defaultInstaller(request: {
       request.sourceSpec,
     ],
     {
-      env: {
-        ...request.env,
-        npm_config_cache: request.cacheDir,
-        NPM_CONFIG_CACHE: request.cacheDir,
-        npm_config_update_notifier: "false",
-      },
-      maxBuffer: 64 * 1024 * 1024,
+      ...request.env,
+      npm_config_cache: request.cacheDir,
+      NPM_CONFIG_CACHE: request.cacheDir,
+      npm_config_update_notifier: "false",
     },
   );
 }

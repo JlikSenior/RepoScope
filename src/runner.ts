@@ -71,7 +71,7 @@ async function resolveGitRoot(targetPath: string): Promise<string> {
   return gitRoot;
 }
 
-function parseConfig(raw: string): RepoScopeConfig {
+export function parseConfig(raw: string): RepoScopeConfig {
   let parsed: unknown;
 
   try {

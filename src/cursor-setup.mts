@@ -3,7 +3,11 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildMcpLaunchSpec, DEFAULT_NPX_SPEC } from "./mcp-launch.mjs";
+import {
+  buildMcpLaunchSpec,
+  DEFAULT_NPX_SPEC,
+  type McpLaunchSpec,
+} from "./mcp-launch.mjs";
 
 export { DEFAULT_NPX_SPEC } from "./mcp-launch.mjs";
 
@@ -27,10 +31,13 @@ function isObject(value: unknown): value is JsonObject {
 export function buildCursorMcpServer(
   packageSpec = DEFAULT_NPX_SPEC,
   projectRoot?: string,
+  launchSpec?: McpLaunchSpec,
 ) {
+  const launch = launchSpec ?? buildMcpLaunchSpec(packageSpec, projectRoot);
   return {
     type: "stdio" as const,
-    ...buildMcpLaunchSpec(packageSpec, projectRoot),
+    command: launch.command,
+    args: [...launch.args],
   };
 }
 
@@ -102,6 +109,7 @@ export async function installCursorIntegration(options?: {
   homeDir?: string;
   packageRoot?: string;
   packageSpec?: string;
+  launchSpec?: McpLaunchSpec;
 }): Promise<CursorInstallResult> {
   const scope = options?.scope ?? "project";
   const homeDir = options?.homeDir ?? homedir();
@@ -136,7 +144,11 @@ export async function installCursorIntegration(options?: {
 
   config.mcpServers = {
     ...(existingServers ?? {}),
-    reposcope: buildCursorMcpServer(packageSpec, projectRoot),
+    reposcope: buildCursorMcpServer(
+      packageSpec,
+      projectRoot,
+      options?.launchSpec,
+    ),
   };
 
   await writeFile(

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -8,9 +9,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const repoRoot = resolve(new URL("../", import.meta.url).pathname);
+const repoRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const tempRoot = await mkdtemp(join(tmpdir(), "reposcope-runtime-smoke-"));
 const packDir = join(tempRoot, "pack");
 const runtimeDir = join(tempRoot, "runtime");
@@ -31,12 +32,10 @@ function run(executable, args, options = {}) {
 }
 
 try {
-  await import("node:fs/promises").then(({ mkdir }) =>
-    Promise.all([
-      mkdir(packDir, { recursive: true }),
-      mkdir(projectDir, { recursive: true }),
-    ]),
-  );
+  await Promise.all([
+    mkdir(packDir, { recursive: true }),
+    mkdir(projectDir, { recursive: true }),
+  ]);
 
   run("npm", ["pack", "--silent", "--pack-destination", packDir]);
   const tarballs = (await readdir(packDir)).filter((name) => name.endsWith(".tgz"));

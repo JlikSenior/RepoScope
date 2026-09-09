@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - run: npm install
+      - name: Verify release tag points to main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"
+      - name: Verify release version policy
+        run: npm run release:check -- --tag "$GITHUB_REF_NAME"
+      - name: Run full validation
+        run: npm run check
+      - name: Pack release artifact
+        run: |
+          mkdir -p release-artifacts
+          npm pack --pack-destination release-artifacts
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-artifacts/*.tgz --verify-tag --generate-notes --title "RepoScope $GITHUB_REF_NAME"

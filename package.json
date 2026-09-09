@@ -17,7 +17,7 @@
     "url": "git+https://github.com/JlikSenior/RepoScope.git"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/write-build-info.mjs",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts tests/*.test.mts",

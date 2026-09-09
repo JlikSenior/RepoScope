@@ -8,7 +8,7 @@ import {
   rm,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
@@ -70,6 +70,18 @@ try {
     installed.entryPath,
     /current[\\/]node_modules[\\/]reposcope[\\/]dist[\\/]bin\.mjs$/,
   );
+
+  const buildInfo = JSON.parse(
+    await readFile(join(dirname(installed.entryPath), "build-info.json"), "utf8"),
+  );
+  assert.equal(buildInfo.schemaVersion, 1);
+  assert.equal(buildInfo.packageVersion, installed.packageVersion);
+  assert.match(buildInfo.revision, /^[a-f0-9]{40}$/i);
+
+  const version = JSON.parse(run("node", [installed.entryPath, "version"]));
+  assert.equal(version.cli.packageVersion, installed.packageVersion);
+  assert.equal(version.cli.revision, buildInfo.revision);
+  assert.equal(version.runtime.build.revision, buildInfo.revision);
 
   const help = run("node", [installed.entryPath, "help"]);
   assert.match(help, /RepoScope/);

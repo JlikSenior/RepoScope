@@ -16,6 +16,7 @@ const tempRoot = await mkdtemp(join(tmpdir(), "reposcope-runtime-smoke-"));
 const packDir = join(tempRoot, "pack");
 const runtimeDir = join(tempRoot, "runtime");
 const projectDir = join(tempRoot, "project");
+const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
 const env = {
   ...process.env,
   REPOSCOPE_RUNTIME_DIR: runtimeDir,
@@ -37,7 +38,7 @@ try {
     mkdir(projectDir, { recursive: true }),
   ]);
 
-  run("npm", ["pack", "--silent", "--pack-destination", packDir]);
+  run(npmExecutable, ["pack", "--silent", "--pack-destination", packDir]);
   const tarballs = (await readdir(packDir)).filter((name) => name.endsWith(".tgz"));
   assert.equal(tarballs.length, 1);
   const tarballPath = join(packDir, tarballs[0]);

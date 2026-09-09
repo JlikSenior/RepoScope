@@ -1,6 +1,14 @@
+import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
+
 import { installCodexIntegration } from "./codex-setup.mjs";
 import { installCursorIntegration } from "./cursor-setup.mjs";
-import { DEFAULT_NPX_SPEC } from "./mcp-launch.mjs";
+import {
+  buildInstalledRuntimeMcpLaunchSpec,
+  buildMcpLaunchSpec,
+  DEFAULT_NPX_SPEC,
+  type McpLaunchSpec,
+} from "./mcp-launch.mjs";
 
 export type SupportedAgent = "cursor" | "codex";
 
@@ -10,6 +18,7 @@ export type AgentIntegrationInstallResult = {
   configPaths: string[];
   guidancePaths: string[];
   packageSpec: string;
+  launchSpec: McpLaunchSpec;
 };
 
 export function parseSupportedAgent(value: string): SupportedAgent {
@@ -23,16 +32,22 @@ export async function installAgentIntegration(
     projectRoot?: string;
     packageRoot?: string;
     packageSpec?: string;
+    runtimeEntryPath?: string;
   },
 ): Promise<AgentIntegrationInstallResult> {
   const packageSpec = options?.packageSpec ?? DEFAULT_NPX_SPEC;
+  const projectRoot = await realpath(resolve(options?.projectRoot ?? process.cwd()));
+  const launchSpec = options?.runtimeEntryPath
+    ? buildInstalledRuntimeMcpLaunchSpec(options.runtimeEntryPath, projectRoot)
+    : buildMcpLaunchSpec(packageSpec, projectRoot);
 
   if (agent === "cursor") {
     const result = await installCursorIntegration({
       scope: "project",
-      projectRoot: options?.projectRoot,
+      projectRoot,
       packageRoot: options?.packageRoot,
       packageSpec,
+      launchSpec,
     });
 
     if (!result.projectRoot) {
@@ -48,12 +63,14 @@ export async function installAgentIntegration(
         ...(result.rulePath ? [result.rulePath] : []),
       ],
       packageSpec,
+      launchSpec,
     };
   }
 
   const result = await installCodexIntegration({
-    projectRoot: options?.projectRoot,
+    projectRoot,
     packageSpec,
+    launchSpec,
   });
 
   return {
@@ -62,5 +79,6 @@ export async function installAgentIntegration(
     configPaths: [result.configPath],
     guidancePaths: [result.agentsPath],
     packageSpec,
+    launchSpec,
   };
 }

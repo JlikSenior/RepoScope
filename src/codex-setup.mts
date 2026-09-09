@@ -2,7 +2,11 @@ import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { upsertManagedBlock, withoutManagedBlock } from "./managed-block.js";
-import { buildMcpLaunchSpec, DEFAULT_NPX_SPEC } from "./mcp-launch.mjs";
+import {
+  buildMcpLaunchSpec,
+  DEFAULT_NPX_SPEC,
+  type McpLaunchSpec,
+} from "./mcp-launch.mjs";
 
 const CODEX_MCP_START = "# >>> RepoScope managed MCP >>>";
 const CODEX_MCP_END = "# <<< RepoScope managed MCP <<<";
@@ -20,8 +24,12 @@ function tomlString(value: string): string {
   return JSON.stringify(value);
 }
 
-function buildCodexMcpBody(packageSpec: string, projectRoot: string): string {
-  const launch = buildMcpLaunchSpec(packageSpec, projectRoot);
+function buildCodexMcpBody(
+  packageSpec: string,
+  projectRoot: string,
+  launchSpec?: McpLaunchSpec,
+): string {
+  const launch = launchSpec ?? buildMcpLaunchSpec(packageSpec, projectRoot);
   const args = launch.args.map(tomlString).join(", ");
 
   return [
@@ -68,6 +76,7 @@ function assertNoUnmanagedRepoScopeMcp(content: string): void {
 export async function installCodexIntegration(options?: {
   projectRoot?: string;
   packageSpec?: string;
+  launchSpec?: McpLaunchSpec;
 }): Promise<CodexInstallResult> {
   const projectRoot = await realpath(resolve(options?.projectRoot ?? process.cwd()));
   const packageSpec = options?.packageSpec ?? DEFAULT_NPX_SPEC;
@@ -86,7 +95,7 @@ export async function installCodexIntegration(options?: {
     existingConfig,
     CODEX_MCP_START,
     CODEX_MCP_END,
-    buildCodexMcpBody(packageSpec, projectRoot),
+    buildCodexMcpBody(packageSpec, projectRoot, options?.launchSpec),
   );
   const nextAgents = upsertManagedBlock(
     existingAgents,

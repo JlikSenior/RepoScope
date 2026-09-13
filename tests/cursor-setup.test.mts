@@ -76,9 +76,11 @@ test("Cursor installer defaults to project scope and installs MCP, skills, and a
     );
 
     assert.match(normalSkill, /name: reposcope/);
+    assert.match(normalSkill, /Native Agent search/);
     assert.match(benchmarkSkill, /name: reposcope-benchmark/);
     assert.match(rule, /alwaysApply: true/);
-    assert.match(rule, /Do not use Cursor built-in codebase search/);
+    assert.match(rule, /Cursor built-in codebase search.*remain explicitly allowed/);
+    assert.doesNotMatch(rule, /Do not use Cursor built-in codebase search/);
 
     await assert.rejects(
       readFile(join(home, ".cursor", "mcp.json"), "utf8"),

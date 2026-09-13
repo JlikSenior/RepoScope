@@ -40,17 +40,21 @@ function buildCodexMcpBody(
 }
 
 function buildCodexGuidance(): string {
-  return `## RepoScope repository context policy
+  return `## RepoScope assistive repository exploration
 
-For repository exploration in this project, use the RepoScope MCP server as the repository context gateway.
+RepoScope is available as an optional context-efficiency and observability layer. It is not a mandatory repository-access gateway.
 
-- Start one task session with \`repo_session_start\` before repository exploration.
-- Use \`repo_search\` to localize relevant files, then prefer narrow \`repo_read\` line ranges around match locations.
-- Do not read an entire large source file merely because one hit points into it. Expand only when a concrete information gap remains.
-- Keep the same \`sessionId\` for the task and finish it with \`repo_session_finish\` when complete or abandoned.
-- Do not silently bypass RepoScope with broad native repository search/read while RepoScope is available. If RepoScope fails, report the limitation or change strategy rather than looping the same failed call.
-- For debugging or correctness review, follow the shortest direct producer -> transformation -> consumer evidence chain. Keep confirmed, suspected, and unknown claims separate.
-- Use normal Codex reasoning and editing after the relevant source has been acquired through RepoScope. Verification may use repository-approved RepoScope commands when useful.`;
+- When using RepoScope, start one task session with \`repo_session_start\` and keep the same \`sessionId\` for RepoScope calls.
+- Use \`repo_search\` as a cheap fixed-string first pass when task-derived terms are likely to help, then use \`repo_read\` ranges when a narrow window is genuinely sufficient.
+- Treat RepoScope rankings as hints rather than a completeness or causality guarantee.
+- Native Codex repository search, grep, semantic/symbol/reference navigation, and direct source reads remain allowed while RepoScope is available.
+- For debugging or correctness review, broaden beyond RepoScope when the hypothesis is uncertain, the symptom may be distant from the cause, semantic/reference navigation is useful, or RepoScope results do not explain the behavior.
+- If one or two RepoScope localization steps fail to produce direct evidence, change strategy instead of repeatedly refining the same keyword hypothesis.
+- Re-reading evidence is allowed when a changed hypothesis makes earlier source relevant again.
+- Keep confirmed, suspected, and unknown claims separate, and do not declare a root cause without direct evidence when verification is practical.
+- RepoScope source-budget metrics measure source delivered through RepoScope, not total provider/model input tokens.
+- Use normal Codex reasoning, editing, repository exploration, and verification at any point. RepoScope guarded writes and approved verification commands remain optional utilities.
+- If a RepoScope session was started, finish it with \`repo_session_finish\` when the task is complete or abandoned.`;
 }
 
 async function readOptional(path: string): Promise<string> {

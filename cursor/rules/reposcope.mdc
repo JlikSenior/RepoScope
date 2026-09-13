@@ -1,28 +1,24 @@
 ---
-description: Enforce RepoScope as the repository context gateway for this project
+description: Keep RepoScope available as an assistive repository exploration layer for this project
 alwaysApply: true
 ---
 
-# RepoScope repository access policy
+# RepoScope repository exploration policy
 
-For coding tasks in this project, use RepoScope MCP as the repository context gateway.
+RepoScope is available as an optional context-efficiency and observability layer. It does not replace Cursor's native repository exploration capabilities.
 
-- Start one RepoScope task session with `repo_session_start` before repository exploration.
-- Use `repo_search` for localization. Search results include bounded match line numbers and estimated file size.
-- Prefer `repo_read` line ranges around relevant matches. Start narrow, usually about 80-160 lines, and expand only when a concrete information gap remains.
-- Do not read an entire large source file merely because one search hit points into it. Use whole-file reads only for clearly small files or when the whole file is genuinely required.
-- Avoid `repo_context` for broad large-file exploration; prefer `repo_search` plus ranged `repo_read`.
-- Keep the same `sessionId` for the task.
-- Do not use Cursor built-in codebase search, grep, semantic search, or direct source-file reads to discover or inspect repository code while RepoScope is available.
-- Do not silently bypass RepoScope if a RepoScope search/read/context call fails. Report the limitation instead.
-- Acquire source incrementally. Do not request or read the whole repository by default.
-- For debugging, correctness review, or investigation tasks, state the concrete question or hypothesis first, then follow the shortest direct producer -> transformation -> consumer evidence chain. Prefer current code, tests, and reproducible inputs over conversation history or broad Git history.
-- Keep claims separated as confirmed, suspected, or unknown. Do not declare a root cause without direct code/test/data evidence that supports it and, when practical, a counterexample or reproducer that distinguishes it from alternatives.
-- Search conversation history, commit history, or broad unrelated metadata only when a specific unresolved evidence gap makes it necessary.
-- Do not repeat the same failed tool call with materially identical inputs. If the same failure occurs again without new information, stop the loop, change strategy, or report the limitation.
-- Cursor may use its normal reasoning and editing facilities after the relevant source has been obtained through RepoScope.
-- RepoScope guarded patching requires complete reads of existing files; partial ranges are intentionally insufficient for that guarded write path.
-- Use repository-approved verification when useful.
-- Finish the RepoScope task session with `repo_session_finish` when the task is complete or abandoned.
+- When using RepoScope, start one task session with `repo_session_start` and keep the same `sessionId` for RepoScope calls during the task.
+- Use `repo_search` as a cheap fixed-string first pass when task-derived terms are likely to localize useful evidence.
+- Treat RepoScope rankings as hints. A high-ranked file is not necessarily causal, and a file absent from RepoScope results is not necessarily irrelevant.
+- Prefer narrow `repo_read` ranges when they are genuinely sufficient, but use whole-file or native reads when structure, lifecycle, control flow, or distant definitions matter.
+- Cursor built-in codebase search, grep, semantic search, symbol/reference navigation, and direct source-file reads remain explicitly allowed while RepoScope is available.
+- For debugging and correctness investigations, broaden beyond RepoScope whenever the initial hypothesis is uncertain, the symptom may be distant from the cause, semantic/reference navigation is needed, or RepoScope results do not explain the behavior.
+- If one or two RepoScope localization steps fail to produce direct evidence, change strategy rather than repeatedly refining the same keyword hypothesis.
+- Re-reading evidence is allowed when a changed hypothesis makes earlier source relevant again; RepoScope deduplication must not be treated as a reasoning prohibition.
+- Keep claims separated as confirmed, suspected, or unknown. Do not declare a root cause without direct code/test/data evidence and, when practical, a counterexample or reproducer that distinguishes it from alternatives.
+- Conversation history, commit history, and broad metadata are valid when they answer a concrete unresolved question.
+- Do not repeat the same failed tool call with materially identical inputs. Switching to native Cursor exploration is a valid strategy change.
+- Cursor may use its normal reasoning, editing, repository exploration, and verification facilities at any point. RepoScope guarded patching and approved commands remain optional utilities.
+- If a RepoScope session was started, finish it with `repo_session_finish` when the task is complete or abandoned.
 
-This rule controls repository context acquisition and investigation discipline; RepoScope is not the reasoning model or editor.
+RepoScope-side source budgets and `usedTokens` measure source delivered through RepoScope. They are not a substitute for provider-observed model input tokens when evaluating whether the product actually saves tokens.

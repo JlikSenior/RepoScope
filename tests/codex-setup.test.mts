@@ -40,7 +40,9 @@ test("Codex installer preserves existing config and AGENTS content and is idempo
     assert.match(config, /RepoScope#first/);
     assert.match(agents, /# Existing project guidance/);
     assert.match(agents, /Keep this text\./);
-    assert.match(agents, /RepoScope repository context policy/);
+    assert.match(agents, /RepoScope assistive repository exploration/);
+    assert.match(agents, /Native Codex repository search.*remain allowed/);
+    assert.doesNotMatch(agents, /Do not silently bypass RepoScope/);
 
     await installCodexIntegration({
       projectRoot: project,
